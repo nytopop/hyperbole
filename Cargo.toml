@@ -1,0 +1,20 @@
+[package]
+name = "hyperbole"
+version = "0.1.0"
+authors = ["nytopop <ericizoita@gmail.com>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+description = "Reserved for now near-future use."
+homepage = "https://github.com/nytopop/hyperbole"
+repository = "https://github.com/nytopop/hyperbole"
+documentation = "https://docs.rs/hyperbole"
+keywords = ["web", "http", "hyper", "async", "framework"]
+categories = ["web-programming", "asynchronous"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures = "0.3.4"
+tokio = { version = "0.2.13", features = ["macros"] }
+hyper = "0.13.4"
+frunk = "0.3.1"
