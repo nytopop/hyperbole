@@ -119,3 +119,24 @@ pub fn typed_header_opt<H: Header>(cx: Hlist![HeaderMap]) -> Hlist![Option<H>, H
     let h = cx.head.typed_get();
     cx.prepend(h)
 }
+
+/// Handle a request by extracting a [Reply] from the request context.
+///
+/// This can be used to terminate a middleware chain if handling a request doesn't require
+/// any extra logic.
+///
+/// # Examples
+/// ```
+/// use hyperbole::{f, hlist, mw, path, record, App, Hlist};
+///
+/// let _app = App::empty()
+///     .context()
+///     .map(|_: Hlist![]| hlist!["this is my response"])
+///     .get(path!["i-want-my-str"], mw::extract::<&str>)
+///     .map(|_: Hlist![]| record![foo = "here is fresh foo"])
+///     .get(path!["unhand-me-a-foo"], mw::extract::<f![foo]>)
+///     .collapse();
+/// ```
+pub async fn extract<T: Reply>(cx: Hlist![T]) -> T {
+    cx.head
+}
