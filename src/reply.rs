@@ -1,11 +1,12 @@
 //! Helpers for replying to requests.
-use super::Response;
+use super::{field::IsoEncode, Response};
 use frunk_core::coproduct::{CNil, Coproduct};
 use headers::{Header, HeaderMapExt};
 use hyper::{
     header::{CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS},
     StatusCode,
 };
+use serde::Serialize;
 use std::{borrow::Cow, convert::Infallible};
 
 /// A type that can be converted into an http [Response].
@@ -128,4 +129,34 @@ content_type! { "text/plain; charset=utf-8"
 content_type! { "application/octet-stream"
     Vec<u8>,
     &'static [u8],
+}
+
+/// Returns a json [Response] from an arbitrary serializable value.
+#[inline]
+pub fn json<T: Serialize>(value: &T) -> Response {
+    let ser = serde_json::to_string(value).unwrap();
+
+    hyper::Response::builder()
+        .header(CONTENT_TYPE, "application/json")
+        .header(X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .body(ser.into())
+        .unwrap()
+}
+
+/// Returns a json [Response] from an anonymous record. All fields must be [Serialize].
+///
+/// ```
+/// use hyperbole::{record, reply};
+///
+/// let _ = reply::jsonr(&record![
+///     a = "cool",
+///     b = 44,
+///     c = 3.03,
+///     d = "hello worldo",
+///     e = "more"
+/// ]);
+/// ```
+#[inline]
+pub fn jsonr<'a, T: IsoEncode<'a>>(value: &'a T) -> Response {
+    json(&value.as_repr())
 }
