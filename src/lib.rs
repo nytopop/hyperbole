@@ -63,11 +63,12 @@ impl<I> Service<&AddrStream> for AppDispatch<I> {
     }
 
     fn call(&mut self, tgt: &AddrStream) -> Self::Future {
-        ready(AppService {
+        let svc = AppService {
             app: Arc::clone(&self.0),
             addr: tgt.remote_addr(),
-        })
-        .never_error()
+        };
+
+        ready(svc).never_error()
     }
 }
 
