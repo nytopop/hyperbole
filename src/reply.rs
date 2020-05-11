@@ -1,6 +1,7 @@
 //! Helpers for replying to requests.
 use super::Response;
 use frunk_core::coproduct::{CNil, Coproduct};
+use headers::{Header, HeaderMapExt};
 use hyper::{
     header::{CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS},
     StatusCode,
@@ -13,12 +14,36 @@ pub trait Reply: Sized + Send {
     fn into_response(self) -> Response;
 
     /// Change the status code to `code`.
+    ///
+    /// ```
+    /// use hyper::StatusCode;
+    /// use hyperbole::{reply::Reply, Response};
+    ///
+    /// let _: Response = "some message" //
+    ///     .with_status(StatusCode::OK);
+    /// ```
     #[inline]
-    fn with_status(self, code: StatusCode) -> WithStatus<Self> {
-        WithStatus { inner: self, code }
+    fn with_status(self, code: StatusCode) -> Response {
+        let mut resp = self.into_response();
+        *resp.status_mut() = code;
+        resp
     }
 
-    // TODO: with_header
+    /// Include a typed `header` in the response.
+    ///
+    /// ```
+    /// use headers::ContentType;
+    /// use hyperbole::{reply::Reply, Response};
+    ///
+    /// let _: Response = "some message" //
+    ///     .with_header(ContentType::text());
+    /// ```
+    #[inline]
+    fn with_header<H: Header>(self, header: H) -> Response {
+        let mut resp = self.into_response();
+        resp.headers_mut().typed_insert(header);
+        resp
+    }
 }
 
 impl Reply for Infallible {
@@ -103,19 +128,4 @@ content_type! { "text/plain; charset=utf-8"
 content_type! { "application/octet-stream"
     Vec<u8>,
     &'static [u8],
-}
-
-/// A wrapper over a [Reply] type that overrides the response status code.
-pub struct WithStatus<T: Reply> {
-    inner: T,
-    code: StatusCode,
-}
-
-impl<T: Reply> Reply for WithStatus<T> {
-    #[inline]
-    fn into_response(self) -> Response {
-        let mut resp = self.inner.into_response();
-        *resp.status_mut() = self.code;
-        resp
-    }
 }
