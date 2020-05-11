@@ -436,10 +436,10 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///
 /// If a fallible middleware returns `Err`, the request being processed short circuits and cannot
 /// be recovered. The specific error response returned to the client can however be modified by
-/// [map_err] or [catch_err]. The former transforms the complete error coproduct, while the latter
+/// [map_errs] or [map_err]. The former transforms the complete error coproduct, while the latter
 /// maps over a single variant.
 ///
-/// Much like with request scoped state, any referenced errors in a [map_err] or [catch_err] must
+/// Much like with request scoped state, any referenced errors in a [map_errs] or [map_err] must
 /// appear in some fallible combinator. This is enforced at compile time.
 ///
 /// ```
@@ -455,10 +455,10 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     .context()
 ///     // attempt to parse the body as a json object:
 ///     .try_then(jsonr::<record![x: u32, y: String]>)
-///     // if the above fails, we can adjust the error with catch_err:
-///     .catch_err(|err: Box<JsonBodyError>| err)
-///     // or we can adjust all possible errors with map_err:
-///     .map_err(|errs| {
+///     // if the above fails, we can adjust the error with map_err:
+///     .map_err(|err: Box<JsonBodyError>| err)
+///     // or we can adjust all possible errors with map_errs:
+///     .map_errs(|errs| {
 ///         let code = StatusCode::INTERNAL_SERVER_ERROR;
 ///         let err = format!("{:?}", errs).with_status(code);
 ///
@@ -523,8 +523,8 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// [coproducts]: coproduct
 /// [try_map]: Ctx::try_map
 /// [try_then]: Ctx::try_then
+/// [map_errs]: Ctx::map_errs
 /// [map_err]: Ctx::map_err
-/// [catch_err]: Ctx::catch_err
 pub struct Ctx<I, P, L> {
     app: App<I>,
     chain: Chain<I, P, L>,
@@ -668,7 +668,7 @@ where
     ///         false => Err("uh oh"),
     ///         true => Ok(cx),
     ///     })
-    ///     .catch_err(|e: &str| "e is the above error, if it happened");
+    ///     .map_err(|e: &str| "e is the above error, if it happened");
     /// ```
     pub fn try_map<F, Args, Ix, Merge, E>(self, f: F) -> Ctx<I, P, TryMap<L, F, Args, Ix>>
     where
@@ -779,11 +779,11 @@ where
     /// let _ctx = App::empty()
     ///     .context()
     ///     // without any fallible combinators, the error is an uninhabitable enum:
-    ///     .map_err(|_| <Coprod![&str]>::inject("impossible!"))
+    ///     .map_errs(|_| <Coprod![&str]>::inject("impossible!"))
     ///     .map(|cx: record![]| cx)
     ///     .collapse();
     /// ```
-    pub fn map_err<F, E>(self, f: F) -> Ctx<I, P, MapErr<L, F>>
+    pub fn map_errs<F, E>(self, f: F) -> Ctx<I, P, MapErr<L, F>>
     where
         F: Fn(<L as Link<Init<I>, P>>::Error) -> E,
         E: IsCoproduct + Reply,
@@ -815,11 +815,11 @@ where
     ///     .context()
     ///     .try_map(fallible_a)
     ///     .try_map(fallible_b)
-    ///     .catch_err(|e: String| "it was String")
-    ///     .catch_err(|e: Vec<u8>| "it was Vec<u8>")
+    ///     .map_err(|e: String| "it was String")
+    ///     .map_err(|e: Vec<u8>| "it was Vec<u8>")
     ///     .collapse();
     /// ```
-    pub fn catch_err<F, E, Ix, R>(self, f: F) -> Ctx<I, P, CatchErr<L, F, E, Ix>>
+    pub fn map_err<F, E, Ix, R>(self, f: F) -> Ctx<I, P, CatchErr<L, F, E, Ix>>
     where
         F: Fn(E) -> R,
         R: Reply,
@@ -846,7 +846,7 @@ where
     ///     .context()
     ///     .path(path!["first" / x: usize / y: f64])
     ///     .map(|cx: record![x]| cx)
-    ///     .catch_err(|e: UriError<ParseFloatError>| e.item)
+    ///     .map_err(|e: UriError<ParseFloatError>| e.item)
     ///     .map(|cx: record![y]| cx)
     ///     .map(|cx: record![x, y]| cx)
     ///     // GET /first/:x/:y/abc
