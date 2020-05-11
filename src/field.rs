@@ -443,25 +443,47 @@ pub struct RCons<T, Tail> {
     tail: Tail,
 }
 
-/// Types with an alternate representation that is [Serialize] and [DeserializeOwned].
-pub trait IsoEncode {
+/// Types with an alternate representation that is [Serialize].
+pub trait IsoEncode<'a> {
     /// The representation.
-    type Repr: Serialize + DeserializeOwned;
+    type Repr: Serialize;
 
     /// Convert to the representation.
-    fn into_repr(self) -> Self::Repr;
+    fn as_repr(&'a self) -> Self::Repr;
+}
+
+impl<'a> IsoEncode<'a> for HNil {
+    type Repr = RNil;
+
+    #[inline]
+    fn as_repr(&'a self) -> Self::Repr {
+        RNil { __: () }
+    }
+}
+
+impl<'a, T: Serialize + 'a, Tail: IsoEncode<'a>> IsoEncode<'a> for HCons<T, Tail> {
+    type Repr = RCons<&'a T, Tail::Repr>;
+
+    #[inline]
+    fn as_repr(&'a self) -> Self::Repr {
+        RCons {
+            head: &self.head,
+            tail: self.tail.as_repr(),
+        }
+    }
+}
+
+/// Types with an alternate representation that is [DeserializeOwned].
+pub trait IsoDecode {
+    /// The representation.
+    type Repr: DeserializeOwned;
 
     /// Convert from the representation.
     fn from_repr(repr: Self::Repr) -> Self;
 }
 
-impl IsoEncode for HNil {
+impl IsoDecode for HNil {
     type Repr = RNil;
-
-    #[inline]
-    fn into_repr(self) -> Self::Repr {
-        RNil { __: () }
-    }
 
     #[inline]
     fn from_repr(_: Self::Repr) -> Self {
@@ -469,16 +491,8 @@ impl IsoEncode for HNil {
     }
 }
 
-impl<T: Serialize + DeserializeOwned, Tail: IsoEncode> IsoEncode for HCons<T, Tail> {
+impl<T: DeserializeOwned, Tail: IsoDecode> IsoDecode for HCons<T, Tail> {
     type Repr = RCons<T, Tail::Repr>;
-
-    #[inline]
-    fn into_repr(self) -> Self::Repr {
-        RCons {
-            head: self.head,
-            tail: self.tail.into_repr(),
-        }
-    }
 
     #[inline]
     fn from_repr(repr: Self::Repr) -> Self {
@@ -493,24 +507,26 @@ impl<T: Serialize + DeserializeOwned, Tail: IsoEncode> IsoEncode for HCons<T, Ta
 mod tests {
     use super::*;
 
-    fn iso_de<T: IsoEncode>(input: &str) -> T {
+    fn iso_de<T: IsoDecode>(input: &str) -> T {
         T::from_repr(serde_json::from_str(input).unwrap())
     }
 
-    fn iso_ser<T: IsoEncode>(input: T) -> String {
-        serde_json::to_string(&input.into_repr()).unwrap()
+    fn iso_ser<'a, T: IsoEncode<'a>>(input: &'a T) -> String {
+        serde_json::to_string(&input.as_repr()).unwrap()
     }
 
-    fn ser_de_ser<T: IsoEncode + Clone + PartialEq + fmt::Debug>(input: T) {
-        let encoded = iso_ser(input.clone());
+    fn ser_de_ser<T: IsoDecode + PartialEq + fmt::Debug>(input: T)
+    where T: for<'a> IsoEncode<'a> {
+        let encoded = iso_ser(&input);
         let decoded: T = iso_de(&encoded);
 
         assert_eq!(input, decoded);
     }
 
-    fn de_ser_de<T: IsoEncode>(input: &str) {
+    fn de_ser_de<T: IsoDecode>(input: &str)
+    where T: for<'a> IsoEncode<'a> {
         let decoded: T = iso_de(input);
-        let encoded = iso_ser(decoded);
+        let encoded = iso_ser(&decoded);
 
         assert_eq!(input, encoded);
     }

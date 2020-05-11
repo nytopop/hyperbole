@@ -1,6 +1,6 @@
 //! Helpers for parsing request bodies.
 // TODO: forms
-use super::{field::IsoEncode, reply::Reply, Response};
+use super::{field::IsoDecode, reply::Reply, Response};
 use bytes::buf::BufExt;
 use frunk_core::{hlist, Hlist};
 use hyper::{Body, StatusCode};
@@ -100,7 +100,7 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Bo
 ///         b = 32324,
 ///         c = 345345.34,
 ///     }
-///     .into_repr(),
+///     .as_repr(),
 /// )
 /// .unwrap();
 ///
@@ -133,7 +133,7 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Bo
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
 /// [Ctx::try_then]: super::Ctx::try_then
-pub async fn jsonr<T: IsoEncode>(cx: Hlist![Body]) -> Result<T, Box<JsonBodyError>> {
+pub async fn jsonr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, Box<JsonBodyError>> {
     // TODO: validate mime type?
     let bodyr = hyper::body::aggregate(cx.head)
         .await
