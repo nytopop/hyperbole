@@ -1,13 +1,56 @@
-use super::{reply::Reply, Response};
+use super::{
+    reply::Reply,
+    tree::{Parsed, Parser, Segment},
+    Response,
+};
 use frunk_core::{
     coproduct::{CNil, CoprodUninjector, Coproduct},
-    hlist::{HNil, Sculptor},
+    hlist::{HNil, Plucker, Sculptor},
 };
 use futures::future::{FutureExt, TryFutureExt};
 use std::{future::Future, marker::PhantomData, ops::Add, sync::Arc};
 
 #[cfg(doc)]
 use futures::future::BoxFuture;
+
+pub trait CoprodAppend<T> {
+    type Output;
+
+    fn appendl(self) -> Self::Output;
+
+    fn appendr(right: T) -> Self::Output;
+}
+
+impl<T> CoprodAppend<T> for CNil {
+    type Output = T;
+
+    #[inline]
+    fn appendl(self) -> Self::Output {
+        match self {}
+    }
+
+    #[inline]
+    fn appendr(right: T) -> Self::Output {
+        right
+    }
+}
+
+impl<T, Head, Tail: CoprodAppend<T>> CoprodAppend<T> for Coproduct<Head, Tail> {
+    type Output = Coproduct<Head, <Tail as CoprodAppend<T>>::Output>;
+
+    #[inline]
+    fn appendl(self) -> Self::Output {
+        match self {
+            Coproduct::Inl(l) => Coproduct::Inl(l),
+            Coproduct::Inr(r) => Coproduct::Inr(Tail::appendl(r)),
+        }
+    }
+
+    #[inline]
+    fn appendr(right: T) -> Self::Output {
+        Coproduct::Inr(Tail::appendr(right))
+    }
+}
 
 /// A hack to make `type_alias_impl_trait` work with rustdoc.
 ///
@@ -365,16 +408,24 @@ impl<L, Sub, Ix> Path<L, Sub, Ix> {
 impl<Req, P, L, Sub, Ix> Link<Req, P> for Path<L, Sub, Ix>
 where
     L: Link<Req, P>,
-    <L as Link<Req, P>>::Params: Sculptor<Sub, Ix>,
-    <<L as Link<Req, P>>::Params as Sculptor<Sub, Ix>>::Remainder: Send,
+
     <L as Link<Req, P>>::Output: Add<Sub>,
     Add2<<L as Link<Req, P>>::Output, Sub>: Send,
+
+    <L as Link<Req, P>>::Params: Plucker<Parsed<Sub>, Ix>,
+    <<L as Link<Req, P>>::Params as Plucker<Parsed<Sub>, Ix>>::Remainder: Send,
+
+    <L as Link<Req, P>>::Error: CoprodAppend<<Sub as Parser<Segment>>::Error>,
+    <<L as Link<Req, P>>::Error as CoprodAppend<<Sub as Parser<Segment>>::Error>>::Output: Reply,
+
+    Sub: Parser<Segment>,
 {
     type Output = Add2<<L as Link<Req, P>>::Output, Sub>;
 
-    type Params = <<L as Link<Req, P>>::Params as Sculptor<Sub, Ix>>::Remainder;
+    type Params = <<L as Link<Req, P>>::Params as Plucker<Parsed<Sub>, Ix>>::Remainder;
 
-    type Error = <L as Link<Req, P>>::Error;
+    type Error =
+        <<L as Link<Req, P>>::Error as CoprodAppend<<Sub as Parser<Segment>>::Error>>::Output;
 
     doc_hack! {
         type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
@@ -382,9 +433,14 @@ where
     }
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
-        let fut = self.link.handle_link(req, p).map_ok(|(stack, p)| {
-            let (ps, rem) = p.sculpt();
-            (stack + ps, rem)
+        let fut = self.link.handle_link(req, p).map(|res| match res {
+            Ok((stack, p)) => match p.pluck() {
+                (Ok(ps), rem) => Ok((stack + ps, rem)),
+                (Err(e), _) => Err(<<L as Link<Req, P>>::Error as CoprodAppend<
+                    <Sub as Parser<Segment>>::Error,
+                >>::appendr(e)),
+            },
+            Err(e) => Err(e.appendl()),
         });
 
         doc_hack! { Box::pin(fut) , fut }

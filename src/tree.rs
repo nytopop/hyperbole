@@ -3,14 +3,13 @@
 //! [httprouter]: https://github.com/julienschmidt/httprouter
 use super::{combinators::Add2, reply::Reply, Response};
 use frunk_core::{
-    hlist::{HCons, HList, HNil},
+    coproduct::{CNil, Coproduct},
+    hlist::{HCons, HNil},
     Hlist,
 };
-use hyper::{
-    header::{CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS},
-    StatusCode,
-};
-use std::{cmp, convert::Infallible, fmt, marker::PhantomData, mem, ops::Add, str::FromStr};
+use hyper::StatusCode;
+use percent_encoding::percent_decode_str;
+use std::{borrow::Cow, cmp, error::Error, fmt, marker::PhantomData, mem, ops::Add, str::FromStr};
 
 /// Expands to a well-typed path specification.
 ///
@@ -21,7 +20,7 @@ use std::{cmp, convert::Infallible, fmt, marker::PhantomData, mem, ops::Add, str
 /// *parsed* (via a [FromStr][fromstr] impl) after a route has been matched.
 ///
 /// Parsing errors of dynamic segments will short-circuit a request, responding with an error
-/// determined by the [FromStr::Err][std::str::FromStr::Err] (which must implement [Reply]).
+/// determined by the [FromStr::Err][std::str::FromStr::Err].
 ///
 /// ```
 /// use hyperbole::path;
@@ -86,22 +85,6 @@ use std::{cmp, convert::Infallible, fmt, marker::PhantomData, mem, ops::Add, str
 /// [record!].
 ///
 /// After parsing completes, said record will be merged with any other request scoped state.
-///
-/// ```
-/// use hyperbole::{access, path, record};
-///
-/// let spec = path!["abc" / num: u32 / *rest: String ? p1: u8, p2: f64];
-///
-/// let parsed: record![num, rest, p1, p2] = spec
-///     // parse_params is called after an App handler matches a route
-///     .parse_params("/abc/256/some-more/stuff", Some("p1=40&p2=3.14159"))
-///     .unwrap();
-///
-/// assert_eq!(256, *access!(&parsed.num));
-/// assert_eq!("some-more/stuff", *access!(&parsed.rest));
-/// assert_eq!(40, *access!(&parsed.p1));
-/// assert_eq!(3.14159, *access!(&parsed.p2));
-/// ```
 ///
 /// [fromstr]: std::str::FromStr
 #[macro_export]
@@ -189,52 +172,90 @@ macro_rules! __path_internal {
     };
 }
 
-#[doc(hidden)]
-pub trait Parser: Sized {
-    type Error: Reply;
+/// An error encountered during uri parsing.
+///
+/// This struct wraps some type's [FromStr::Err][std::str::FromStr::Err].
+#[derive(Clone, Debug)]
+pub struct UriError<E> {
+    /// The (uridecoded) segment that failed to parse.
+    pub item: String,
 
-    fn parse<'a, I: Iterator<Item = &'a str>>(input: &mut I) -> Result<Self, Self::Error>;
+    /// The inner error.
+    pub err: E,
 }
 
-impl Parser for HNil {
-    type Error = Infallible;
+impl<E: Send + Error> Reply for UriError<E> {
+    fn into_response(self) -> Response {
+        hyper::Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(format!("{:?}: {}", self.item, self.err).into())
+            .unwrap()
+    }
+}
+
+#[doc(hidden)]
+pub enum Cluster {}
+
+#[doc(hidden)]
+pub enum Segment {}
+
+#[doc(hidden)]
+pub trait Parser<Kind>: Sized {
+    type Error: Reply;
+
+    fn parse<'a, I: Iterator<Item = Cow<'a, str>>>(input: &mut I) -> Result<Self, Self::Error>;
+}
+
+pub(super) type Parsed<P> = Result<P, <P as Parser<Segment>>::Error>;
+
+#[doc(hidden)]
+pub type Params<P> = HCons<Parsed<P>, HNil>;
+
+impl<Kind> Parser<Kind> for HNil {
+    type Error = CNil;
 
     #[inline]
-    fn parse<'a, I: Iterator<Item = &'a str>>(input: &mut I) -> Result<Self, Self::Error> {
-        assert! { input.next().is_none() };
+    fn parse<'a, I: Iterator<Item = Cow<'a, str>>>(_: &mut I) -> Result<Self, Self::Error> {
         Ok(HNil)
     }
 }
 
-// TODO: should input strings be uridecoded first?
-impl<T: FromStr, P: HList + Parser> Parser for HCons<T, P>
-where T::Err: Reply
+impl<Head, Tail> Parser<Segment> for HCons<Head, Tail>
+where
+    Head: FromStr,
+    Head::Err: Send + Error,
+    Tail: Parser<Segment>,
 {
-    // TODO: UriParseError: get rid of URI_MANGLE, it's an inflexible jank
-    type Error = Response;
+    type Error = Coproduct<UriError<Head::Err>, Tail::Error>;
 
-    fn parse<'a, I: Iterator<Item = &'a str>>(input: &mut I) -> Result<Self, Self::Error> {
-        let item = input
-            .next()
-            .expect("parse is always called with exactly the right number of params");
+    #[inline]
+    fn parse<'a, I: Iterator<Item = Cow<'a, str>>>(input: &mut I) -> Result<Self, Self::Error> {
+        let item = input.next().expect("input contains enough params");
 
-        let head = (item.parse::<T>()).map_err(|e| {
-            if <T::Err as Reply>::URI_MANGLE.0 {
-                hyper::Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .header(CONTENT_TYPE, "text/plain; charset=utf-8")
-                    .header(X_CONTENT_TYPE_OPTIONS, "nosniff")
-                    .body(format!("failed to parse {:?} in uri", item).into())
-                    .unwrap()
-            } else {
-                e.into_response()
-            }
-        })?;
+        let head = (item.parse::<Head>())
+            .map_err(|err| (item.into_owned(), err))
+            .map_err(|(item, err)| UriError { item, err })
+            .map_err(Coproduct::Inl)?;
 
-        Ok(HCons {
-            head,
-            tail: P::parse(input).map_err(Reply::into_response)?,
-        })
+        let tail = Tail::parse(input).map_err(Coproduct::Inr)?;
+
+        Ok(HCons { head, tail })
+    }
+}
+
+impl<Head, Tail> Parser<Cluster> for HCons<Parsed<Head>, Tail>
+where
+    Head: Parser<Segment>,
+    Tail: Parser<Cluster>,
+{
+    type Error = <Tail as Parser<Cluster>>::Error;
+
+    #[inline]
+    fn parse<'a, I: Iterator<Item = Cow<'a, str>>>(input: &mut I) -> Result<Self, Self::Error> {
+        let head = Parser::parse(input);
+        let tail = Parser::parse(input)?;
+
+        Ok(HCons { head, tail })
     }
 }
 
@@ -287,10 +308,6 @@ impl<P> fmt::Display for PathSpec<P> {
     /// eq("/one/:two/three", path!["one" / two: u32 / "three" ? p1: u8]);
     /// eq("/one/:two/*three", path!["one" / two: u32 / *three: String]);
     /// eq("/one/:two/*three", path!["one" / two: u32 / *three: String ? p1: u8]);
-    ///
-    /// let a = path!["one" / two: u32 ? p1: u8];
-    /// let b = path!["three" / *four: String ? p2: u8];
-    /// eq("/one/:two/three/*four", a + b);
     /// ```
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "/")?;
@@ -316,34 +333,8 @@ impl<P> fmt::Display for PathSpec<P> {
     }
 }
 
-impl<P: Add<_P>, _P> Add<PathSpec<_P>> for PathSpec<P> {
-    type Output = PathSpec<Add2<P, _P>>;
-
-    /// Append a path spec to this path spec.
-    ///
-    /// # Panics
-    /// This panics if `other` is non-empty (except for query parameters) and `self` already
-    /// contains a catch-all parameter, or if `other` contains query parameters that already
-    /// exist in `self`.
-    fn add(mut self, mut other: PathSpec<_P>) -> Self::Output {
-        assert! { other.segs.is_empty() || !self.contains_catch_all(),
-            "path spec: cannot append to spec that already contains a catch-all",
-        }
-        if let Some(name) = (other.segs.iter())
-            .filter(|s| s.kind == Kind::Query)
-            .map(|s| s.name)
-            .find(|name| self.contains_query(name))
-        {
-            panic!("path spec: duplicate query param {:?}", name);
-        }
-        self.segs.append(&mut other.segs);
-
-        PathSpec::from_segs(self.segs)
-    }
-}
-
 impl PathSpec<HNil> {
-    /// The root path, which has no segments.
+    /// The root path.
     pub const ROOT: Self = PathSpec {
         segs: vec![],
         tag: PhantomData,
@@ -429,24 +420,53 @@ impl<P> PathSpec<P> {
 
         PathSpec::from_segs(self.segs)
     }
+
+    /// Append a path spec to this path spec.
+    ///
+    /// # Panics
+    /// This panics if `other` is non-empty (except for query parameters) and `self` already
+    /// contains a catch-all parameter, or if `other` contains query parameters that already
+    /// exist in `self`.
+    pub(super) fn append<_P>(
+        mut self,
+        mut other: PathSpec<_P>,
+    ) -> PathSpec<Add2<P, Hlist![Parsed<_P>]>>
+    where
+        P: Add<Hlist![Parsed<_P>]>,
+        _P: Parser<Segment>,
+    {
+        assert! { other.segs.is_empty() || !self.contains_catch_all(),
+            "path spec: cannot append to spec that already contains a catch-all",
+        }
+        if let Some(name) = (other.segs.iter())
+            .filter(|s| s.kind == Kind::Query)
+            .map(|s| s.name)
+            .find(|name| self.contains_query(name))
+        {
+            panic!("path spec: duplicate query param {:?}", name);
+        }
+        self.segs.append(&mut other.segs);
+
+        PathSpec::from_segs(self.segs)
+    }
 }
 
-impl<P: Parser> PathSpec<P> {
+impl<P: Parser<Cluster>> PathSpec<P> {
     /// Parse any parameters present in the provided path and query string.
     ///
     /// # Panics
     /// This panics if `path` does not conform to the shape expected by `P`.
     ///
-    /// In practice, this is only called in `hyperbole` after a path has matched a route, and
-    /// consequently been guaranteed to have the correct shape.
-    pub fn parse_params(&self, mut path: &str, query: Option<&str>) -> Result<P, P::Error> {
+    /// In practice, this is only called after a path has matched a route, which guarantees
+    /// it has the correct shape.
+    pub(super) fn parse_params(&self, mut path: &str, query: Option<&str>) -> Result<P, P::Error> {
         let query = query.unwrap_or_default();
 
         // split off the first leading slash
         assert!(path.starts_with('/'));
         path = &path[1..];
 
-        P::parse(&mut self.segs.iter().filter_map(|s| match s.kind {
+        let items = self.segs.iter().filter_map(|s| match s.kind {
             Kind::Static => {
                 // consume until the next slash
                 path = path.find('/').map(|i| &path[i + 1..]).unwrap_or("");
@@ -485,7 +505,9 @@ impl<P: Parser> PathSpec<P> {
 
                 Some(val)
             }
-        }))
+        });
+
+        P::parse(&mut items.map(|item| percent_decode_str(item).decode_utf8_lossy()))
     }
 }
 
@@ -494,14 +516,14 @@ pub(super) struct Node<H: ?Sized> {
     path: String,
     indices: String,
     wild_child: bool,
-    kind: Segment,
+    kind: NodeKind,
     priority: u32,
     children: Vec<Self>,
     entry: Option<Box<H>>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum Segment {
+enum NodeKind {
     Static,
     Root,
     Param,
@@ -514,7 +536,7 @@ impl<H: ?Sized> Default for Node<H> {
             path: "".into(),
             indices: "".into(),
             wild_child: false,
-            kind: Segment::Static,
+            kind: NodeKind::Static,
             priority: 0,
             children: vec![],
             entry: None,
@@ -527,7 +549,7 @@ impl<H: ?Sized> Node<H> {
         self.priority += 1;
         if self.path.is_empty() && self.indices.is_empty() {
             self.insert_child(path, path, entry);
-            self.kind = Segment::Root;
+            self.kind = NodeKind::Root;
             return;
         }
 
@@ -544,7 +566,7 @@ impl<H: ?Sized> Node<H> {
                     path: n.path.split_off(i),
                     indices: mem::take(&mut n.indices),
                     wild_child: n.wild_child,
-                    kind: Segment::Static,
+                    kind: NodeKind::Static,
                     priority: n.priority - 1,
                     children: mem::take(&mut n.children),
                     entry: mem::take(&mut n.entry),
@@ -569,7 +591,7 @@ impl<H: ?Sized> Node<H> {
                     }
 
                     let path_seg = match n.kind {
-                        Segment::CatchAll => path.splitn(2, '/').next().unwrap(),
+                        NodeKind::CatchAll => path.splitn(2, '/').next().unwrap(),
                         _ => path,
                     };
                     let idx = full_path.find(path_seg).unwrap();
@@ -584,7 +606,7 @@ impl<H: ?Sized> Node<H> {
                 let idxc = path.as_bytes()[0];
 
                 // '/' after param
-                if n.kind == Segment::Param && idxc == b'/' && n.children.len() == 1 {
+                if n.kind == NodeKind::Param && idxc == b'/' && n.children.len() == 1 {
                     n = &mut n.children[0];
                     n.priority += 1;
                     continue;
@@ -618,7 +640,7 @@ impl<H: ?Sized> Node<H> {
     fn wild_child_doesnt_conflict(&self, child: &str) -> bool {
         child.len() >= self.path.len()
             && self.path == child[..self.path.len()]
-            && self.kind != Segment::CatchAll
+            && self.kind != NodeKind::CatchAll
             && (self.path.len() >= child.len() || child.as_bytes()[self.path.len()] == b'/')
     }
 
@@ -677,7 +699,7 @@ impl<H: ?Sized> Node<H> {
                 n.wild_child = true;
                 n.children = vec![Self {
                     path: wc.into(),
-                    kind: Segment::Param,
+                    kind: NodeKind::Param,
                     priority: 1,
                     ..Self::default()
                 }];
@@ -719,11 +741,11 @@ impl<H: ?Sized> Node<H> {
 
                 n.children = vec![Self {
                     wild_child: true,
-                    kind: Segment::CatchAll,
+                    kind: NodeKind::CatchAll,
                     priority: 1,
                     children: vec![Self {
                         path: path[i..].into(),
-                        kind: Segment::CatchAll,
+                        kind: NodeKind::CatchAll,
                         priority: 1,
                         entry: Some(entry),
                         ..Self::default()
@@ -769,7 +791,7 @@ impl<H: ?Sized> Node<H> {
 
                     n = &n.children[0];
 
-                    if let Segment::Param = n.kind {
+                    if let NodeKind::Param = n.kind {
                         let end = (path.bytes())
                             .position(|c| c == b'/')
                             .unwrap_or_else(|| path.len());
@@ -797,7 +819,7 @@ impl<H: ?Sized> Node<H> {
                         break r;
                     }
 
-                    if let Segment::CatchAll = n.kind {
+                    if let NodeKind::CatchAll = n.kind {
                         r.entry = n.entry.as_deref();
                         break r;
                     }
@@ -814,7 +836,7 @@ impl<H: ?Sized> Node<H> {
 
                 // if there is no entry for this route, but this route has a wildcard child,
                 // there must be an entry for this path with an additional trailing slash
-                if path == "/" && n.wild_child && n.kind != Segment::Root {
+                if path == "/" && n.wild_child && n.kind != NodeKind::Root {
                     r.tsr = true;
                     break r;
                 }
@@ -823,7 +845,7 @@ impl<H: ?Sized> Node<H> {
                 if let Some(i) = n.indices.bytes().position(|c| c == b'/') {
                     n = &n.children[i];
                     r.tsr = (n.path.len() == 1 && n.entry.is_some())
-                        || (n.kind == Segment::CatchAll && n.children[0].entry.is_some());
+                        || (n.kind == NodeKind::CatchAll && n.children[0].entry.is_some());
                     break r;
                 }
 
@@ -892,9 +914,10 @@ fn find_wildcard(path: &str) -> Option<(usize, &str, bool)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        super::{access, path, record},
+        super::{access, path},
         *,
     };
+    use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
     use quickcheck_macros::quickcheck;
 
     #[test]
@@ -945,79 +968,56 @@ mod tests {
         path!["one" / two: u32 / *three: String ? p1: u8, p2: u8];
     }
 
+    fn parse_params<P>(spec: &PathSpec<P>, path: &str, query: Option<&str>) -> Parsed<P>
+    where P: Parser<Segment> {
+        // NOTE(safety): we're just changing a ZST tag
+        let spec: &PathSpec<Params<P>> = unsafe { mem::transmute(spec) };
+
+        spec.parse_params(path, query).unwrap().head
+    }
+
     #[quickcheck]
-    fn test_parse_segments(x: u32) {
+    fn test_parse_segments(x: u32, y: String) {
+        let encoded = utf8_percent_encode(&y, NON_ALPHANUMERIC);
+        let path = format!("/abc/{}/cba/{}", x, encoded);
+
         let p = path!["abc" / x: u32 / "cba" / y: String];
-
-        let path = format!("/abc/{}/cba/some-string", x);
-
-        let ps: record![x: u32, y: String] = p.parse_params(&path, None).unwrap();
+        let ps = parse_params(&p, &path, None).unwrap();
 
         assert_eq!(*access!(&ps.x), x);
-        assert_eq!(*access!(&ps.y), "some-string");
+        assert_eq!(*access!(&ps.y), y);
     }
 
     #[quickcheck]
     fn test_parse_catch_all(x: u32, rest: String) {
+        let encoded = utf8_percent_encode(&rest, NON_ALPHANUMERIC);
+        let path = format!("/abc/{}/{}", x, encoded);
+
         let p = path!["abc" / x: u32 / *rest: String];
-
-        let path = format!("/abc/{}/{}", x, rest);
-
-        let ps: record![x: u32, rest: String] = p.parse_params(&path, None).unwrap();
+        let ps = parse_params(&p, &path, None).unwrap();
 
         assert_eq!(*access!(&ps.x), x);
         assert_eq!(*access!(&ps.rest), rest);
     }
 
-    #[test]
-    fn test_parse_query_params() {
-        let p = path![? p1: u8];
-        let ps: record![p1: u8] = p.parse_params("/", Some("p1=40")).unwrap();
-        assert_eq!(*access!(&ps.p1), 40);
+    #[quickcheck]
+    fn test_parse_query_params(a: u8, b: u32, c: String) {
+        let q = format!("p1={}", a);
+        let spec = path![? p1: u8];
+        let ps = parse_params(&spec, "/", Some(&q)).unwrap();
+        assert_eq!(*access!(&ps.p1), a);
 
-        let p = path![? p1: u32, p2: String];
+        let encoded = utf8_percent_encode(&c, NON_ALPHANUMERIC);
+        let q = format!("p1={}&p2={}", b, encoded);
+        let spec = path![? p1: u32, p2: String];
+        let ps = parse_params(&spec, "/", Some(&q)).unwrap();
+        assert_eq!(*access!(&ps.p1), b);
+        assert_eq!(*access!(&ps.p2), c);
 
-        let ps: record![p1: u32, p2: String] =
-            p.parse_params("/", Some("p1=321&p2=helloworldo")).unwrap();
-        assert_eq!(*access!(&ps.p1), 321);
-        assert_eq!(*access!(&ps.p2), "helloworldo");
-
-        let ps = p.parse_params("/", Some("p2=helloworldo&p1=300")).unwrap();
-        assert_eq!(*access!(&ps.p1), 300);
-        assert_eq!(*access!(&ps.p2), "helloworldo");
-    }
-
-    #[test]
-    fn test_parse_gnarly_appended_mix() {
-        let a = path!["one"];
-        let b = path![? p1: u8];
-        let c = path![two: u32 / "three" ? p2: String];
-        let d = path![*four: String ? p3: u8];
-        let p = a + b + c + d;
-
-        let ps: record![p1: u8, two: u32, p2: String, four: String, p3: u8] = p
-            .parse_params(
-                "/one/404/three/and_the/rest/of/it",
-                Some("p1=250&p2=hello&p3=4"),
-            )
-            .unwrap();
-        assert_eq!(*access!(&ps.p1), 250);
-        assert_eq!(*access!(&ps.p2), "hello");
-        assert_eq!(*access!(&ps.p3), 4);
-        assert_eq!(*access!(&ps.two), 404);
-        assert_eq!(*access!(&ps.four), "and_the/rest/of/it");
-
-        let ps = p
-            .parse_params(
-                "/one/999999999/three/some/random//string/bro",
-                Some("not_a_real_param=gotcha&p3=40&yeet=now&p1=100&fdsa=fortuna"),
-            )
-            .unwrap();
-        assert_eq!(*access!(&ps.p1), 100);
-        assert_eq!(*access!(&ps.p2), "");
-        assert_eq!(*access!(&ps.p3), 40);
-        assert_eq!(*access!(&ps.two), 999999999);
-        assert_eq!(*access!(&ps.four), "some/random//string/bro");
+        let q = format!("p2={}&p1={}", encoded, b);
+        let ps = parse_params(&spec, "/", Some(&q)).unwrap();
+        assert_eq!(*access!(&ps.p1), b);
+        assert_eq!(*access!(&ps.p2), c);
     }
 
     #[test]

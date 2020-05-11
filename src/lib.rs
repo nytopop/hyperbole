@@ -6,7 +6,6 @@
     attr(deny(rust_2018_idioms, unused_imports, unused_mut))
 ))]
 #![warn(rust_2018_idioms, missing_docs)]
-#![forbid(unsafe_code)]
 
 #[doc(inline)]
 pub use frunk_core::{coproduct, hlist, Coprod, Hlist};
@@ -22,11 +21,12 @@ pub mod tree;
 use combinators::{Add2, Base, CatchErr, End, Link, Map, MapErr, Path, Then, TryMap, TryThen};
 use handler::{Chain, Handler, HandlerFn, NotFound};
 use reply::Reply;
-use tree::{Node, Parser, PathSpec, Route};
+use tree::{Cluster, Node, Params, Parser, PathSpec, Route, Segment};
 
 use frunk_core::{
     coproduct::{CNil, Coproduct},
-    hlist::{HList, HNil, Sculptor},
+    hlist::{HList, HNil},
+    indices::Here,
 };
 use futures::future::{ready, BoxFuture, FutureExt, NeverError, Ready};
 use http::{Extensions, HeaderMap, HeaderValue, Uri, Version};
@@ -222,15 +222,19 @@ impl<I: Clone> App<I> {
     ///     .context_path(path!["xyz" / param: u32])
     ///     .collapse();
     /// ```
-    pub fn context_path<P, Ix>(self, spec: PathSpec<P>) -> Ctx<I, P, Path<Base, P, Ix>>
-    where P: Sculptor<P, Ix> {
+    pub fn context_path<P: Parser<Segment>>(
+        self,
+        spec: PathSpec<P>,
+    ) -> Ctx<I, Params<P>, Path<Base, P, Here>>
+    {
+        let spec = PathSpec::ROOT.append(spec);
         let chain = Chain::new(self.state.clone(), spec).link_next(Path::new);
 
         Ctx { app: self, chain }
     }
 
     /// Begin a new request context at the root path.
-    pub fn context(self) -> Ctx<I, HNil, Path<Base, HNil, HNil>> {
+    pub fn context(self) -> Ctx<I, Params<HNil>, Path<Base, HNil, Here>> {
         self.context_path(PathSpec::ROOT)
     }
 
@@ -427,7 +431,8 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// # Error Handling
 /// Errors that arise during request resolution are represented in the context as [coproducts]
 /// (a generalization of enums). When a fallible middleware is used ([try_map] or [try_then]),
-/// an additional error variant is added to the context's error coproduct.
+/// an additional error variant is added to the context's error coproduct. This also applies
+/// to parse errors of dynamic path parameters (which are wrapped in a [tree::UriError]).
 ///
 /// If a fallible middleware returns `Err`, the request being processed short circuits and cannot
 /// be recovered. The specific error response returned to the client can however be modified by
@@ -828,48 +833,30 @@ where
     ///
     /// The [path!] macro can be used to construct an appropriate [`PathSpec`].
     ///
-    /// Uri parsing always completes before any middlewares are executed, regardless of the
-    /// order path combinators appear in.
-    // TODO: not for long!
-    // Uri parsing completes before any middlewares execute, but parameter injection will be
-    // staggered such that a request only short circuits at this point in the chain
+    /// When a request is being handled, the concatenated path specification is parsed before
+    /// any middlewares execute. However, all extracted parameters (and parsing errors) are
+    /// deferred such that they only appear at the point where they were specified.
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, record, App};
+    /// use hyperbole::{path, record, tree::UriError, App};
+    /// use std::num::ParseFloatError;
     ///
     /// let _ctx = App::empty()
     ///     .context()
     ///     .path(path!["first" / x: usize / y: f64])
     ///     .map(|cx: record![x]| cx)
+    ///     .catch_err(|e: UriError<ParseFloatError>| e.item)
     ///     .map(|cx: record![y]| cx)
     ///     .map(|cx: record![x, y]| cx)
     ///     // GET /first/:x/:y/abc
     ///     .get(path!["abc"], |cx: record![x, y]| async { "" });
     /// ```
-    // TODO: Path should change the context error type appropriately
-    //
-    // right now, the P that links are parameterised over looks like:
-    //
-    //   Hlist![Pa, Pb, _Pa, _Pb]
-    //
-    // if we want to inject an appropriate error, we should instead have it be like:
-    //
-    //   type P = Hlist![Pa, Pb];
-    //   type _P = Hlist![_Pa, _Pb];
-    //   type Parsed<P> = Result<P, <P as Parser>::Error>;
-    //
-    //   Hlist![Parsed<P>, Parsed<_P>]
-    //
-    // technically, we don't need the sculptor bound so long as we specify the concrete type,
-    // as you can always pop the head off of an HCons<P, Tail>
-    //
-    // the problem is that we treat P as one homogenous bucket, when we should treat it as
-    // a sequence of independent buckets.
-    pub fn path<_P, Ix>(self, spec: PathSpec<_P>) -> Ctx<I, Add2<P, _P>, Path<L, _P, Ix>>
+    pub fn path<_P, Ix>(self, spec: PathSpec<_P>) -> Ctx<I, Add2<P, Params<_P>>, Path<L, _P, Ix>>
     where
-        P: Add<_P>,
-        Path<L, _P, Ix>: Link<Init<I>, Add2<P, _P>>,
+        P: Add<Params<_P>>,
+        _P: Parser<Segment>,
+        Path<L, _P, Ix>: Link<Init<I>, Add2<P, Params<_P>>>,
     {
         Ctx {
             app: self.app,
@@ -1086,17 +1073,19 @@ where
 
 #[doc(hidden)]
 pub trait CtxState2<L, I, P, _P, Pix, F, Args, Ix> = where
-    P: Add<_P>,
-    Add2<P, _P>: Parser,
+    P: Add<Params<_P>>,
+    _P: Parser<Segment>,
+    Add2<P, Params<_P>>: Parser<Cluster>,
     End<Path<L, _P, Pix>, F, Args, Ix>:
-        Link<Init<I>, Add2<P, _P>, Output = Response, Params = HNil> + 'static;
+        Link<Init<I>, Add2<P, Params<_P>>, Output = Response, Params = HNil> + 'static;
 
 #[doc(hidden)]
 pub trait CtxState3<L, I, P, _P, Pix, W, WArgs, Wix, F, Args, Ix> = where
-    P: Add<_P>,
-    Add2<P, _P>: Parser,
+    P: Add<Params<_P>>,
+    _P: Parser<Segment>,
+    Add2<P, Params<_P>>: Parser<Cluster>,
     End<TryThen<Path<L, _P, Pix>, W, WArgs, Wix>, F, Args, Ix>:
-        Link<Init<I>, Add2<P, _P>, Output = Response, Params = HNil> + 'static;
+        Link<Init<I>, Add2<P, Params<_P>>, Output = Response, Params = HNil> + 'static;
 
 mod sealed {
     pub trait Seal {}
@@ -1185,11 +1174,11 @@ mod tests {
         assert!(p.status.is_success());
 
         let (p, body) = get(&app, "/more/fdfdf").await;
-        assert_eq!(r#"failed to parse "more" in uri"#, body);
+        assert_eq!(r#""more": invalid digit found in string"#, body);
         assert!(p.status.is_client_error());
 
         let (p, body) = get(&app, "/4848484/fdfdf").await;
-        assert_eq!(r#"failed to parse "fdfdf" in uri"#, body);
+        assert_eq!(r#""fdfdf": invalid float literal"#, body);
         assert!(p.status.is_client_error());
     }
 

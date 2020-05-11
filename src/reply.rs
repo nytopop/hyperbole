@@ -5,24 +5,10 @@ use hyper::{
     header::{CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS},
     StatusCode,
 };
-use std::{
-    borrow::Cow,
-    char::ParseCharError,
-    convert::Infallible,
-    net::AddrParseError,
-    num::{ParseFloatError, ParseIntError},
-    str::ParseBoolError,
-};
-
-mod sealed {
-    pub struct Bool(pub(crate) bool);
-}
+use std::{borrow::Cow, convert::Infallible};
 
 /// A type that can be converted into an http [Response].
 pub trait Reply: Sized + Send {
-    #[doc(hidden)]
-    const URI_MANGLE: sealed::Bool = sealed::Bool(false);
-
     /// Perform the conversion.
     fn into_response(self) -> Response;
 
@@ -117,30 +103,6 @@ content_type! { "text/plain; charset=utf-8"
 content_type! { "application/octet-stream"
     Vec<u8>,
     &'static [u8],
-}
-
-macro_rules! uri_mangled {
-    ($( $err_type:ty ),+ $( , )?) => {
-        $(impl Reply for $err_type {
-            const URI_MANGLE: sealed::Bool = sealed::Bool(true);
-
-            #[inline]
-            fn into_response(self) -> Response {
-                hyper::Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(format!("{:?}", self).into())
-                    .unwrap()
-            }
-        })+
-    };
-}
-
-uri_mangled! {
-    ParseIntError,
-    ParseFloatError,
-    ParseBoolError,
-    ParseCharError,
-    AddrParseError,
 }
 
 /// A wrapper over a [Reply] type that overrides the response status code.

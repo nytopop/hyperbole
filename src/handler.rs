@@ -1,7 +1,7 @@
 use super::{
     combinators::{Add2, Base, Link},
     reply::Reply,
-    tree::{Parser, PathSpec},
+    tree::{Cluster, Params, Parser, PathSpec, Segment},
     Init, Response,
 };
 use frunk_core::{hlist, hlist::HNil};
@@ -77,7 +77,7 @@ impl<I: Clone, P, L: Clone> Clone for Chain<I, P, L> {
 impl<I: 'static, P: 'static, L: 'static> Handler for Chain<I, P, L>
 where
     I: Sync + Send + Clone,
-    P: Parser,
+    P: Parser<Cluster>,
     L: Sync + Send + Link<Init<I>, P, Output = Response, Params = HNil>,
     <L as Link<Init<I>, P>>::Error: Reply,
 {
@@ -122,10 +122,13 @@ impl<I, P, L> Chain<I, P, L> {
         Chain { state, path, link }
     }
 
-    pub fn add_path<_P>(self, spec: PathSpec<_P>) -> Chain<I, Add2<P, _P>, L>
-    where P: Add<_P> {
+    pub fn add_path<_P>(self, spec: PathSpec<_P>) -> Chain<I, Add2<P, Params<_P>>, L>
+    where
+        P: Add<Params<_P>>,
+        _P: Parser<Segment>,
+    {
         let state = self.state;
-        let path = self.path + spec;
+        let path = self.path.append(spec);
         let link = self.link;
         Chain { state, path, link }
     }
