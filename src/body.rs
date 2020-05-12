@@ -1,5 +1,4 @@
 //! Helpers for parsing request bodies.
-// TODO: forms
 use super::{field::IsoDecode, reply::Reply, Response};
 use bytes::buf::BufExt;
 use frunk_core::{hlist, Hlist};
@@ -18,10 +17,14 @@ pub enum JsonBodyError {
 impl Reply for JsonBodyError {
     #[inline]
     fn into_response(self) -> Response {
-        // TODO
+        let err = match self {
+            JsonBodyError::Body(e) => format!("failed to read body: {}", e),
+            JsonBodyError::Json(e) => format!("failed to parse body as json: {}", e),
+        };
+
         hyper::Response::builder()
             .status(StatusCode::BAD_REQUEST)
-            .body("".into())
+            .body(err.into())
             .unwrap()
     }
 }
@@ -53,7 +56,6 @@ impl Reply for JsonBodyError {
 ///     .collapse();
 /// ```
 pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Box<JsonBodyError>> {
-    // TODO: validate mime type?
     let bodyr = hyper::body::aggregate(cx.head)
         .await
         .map_err(JsonBodyError::Body)
@@ -88,7 +90,7 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Bo
 /// }
 ///
 /// let my_req = serde_json::to_string(&MyRequest {
-///     a: "asdf".into(),
+///     a: "hello-worldo".into(),
 ///     b: 32324,
 ///     c: 345345.34,
 /// })
@@ -96,7 +98,7 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Bo
 ///
 /// let my_req_r = serde_json::to_string(
 ///     &record! {
-///         a = "asdf".to_string(),
+///         a = "hello-worldo".to_string(),
 ///         b = 32324,
 ///         c = 345345.34,
 ///     }
@@ -105,7 +107,7 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Bo
 /// .unwrap();
 ///
 /// // both of the above serialize to:
-/// let repr = r#"{"a":"asdf","b":32324,"c":345345.34}"#;
+/// let repr = r#"{"a":"hello-worldo","b":32324,"c":345345.34}"#;
 ///
 /// assert_eq!(repr, my_req);
 /// assert_eq!(repr, my_req_r);
@@ -134,7 +136,6 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Bo
 /// [Ctx::handle_with]: super::Ctx::handle_with
 /// [Ctx::try_then]: super::Ctx::try_then
 pub async fn jsonr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, Box<JsonBodyError>> {
-    // TODO: validate mime type?
     let bodyr = hyper::body::aggregate(cx.head)
         .await
         .map_err(JsonBodyError::Body)
@@ -145,4 +146,35 @@ pub async fn jsonr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, Box<JsonBodyErro
         .map_err(JsonBodyError::Json)
         .map_err(Box::new)
         .map(T::from_repr)
+}
+
+// TODO: form + multipart form
+// TODO: record variants of ^
+
+#[cfg(test)]
+mod tests {
+    use super::{super::record, *};
+    use hyper::body::to_bytes;
+
+    async fn reply_str<R: Reply>(r: R) -> String {
+        let body = r.into_response().into_body();
+        let bin = to_bytes(body).await.unwrap();
+
+        String::from_utf8_lossy(&*bin).into_owned()
+    }
+
+    #[tokio::test]
+    async fn test_jsonr_errors() {
+        let input = r#"{"a":3,"b":32324,"c":345345.34}"#;
+
+        let res = jsonr::<record![a: String, b: u32, c: f32,]>(hlist![input.into()])
+            .await
+            .unwrap_err();
+        let body = reply_str(res).await;
+
+        assert_eq!(
+            "failed to parse body as json: invalid type: integer `3`, expected a string at line 1 column 31",
+            body
+        );
+    }
 }
