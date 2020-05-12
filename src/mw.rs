@@ -3,17 +3,21 @@ use super::{reply::Reply, Response};
 use frunk_core::Hlist;
 use headers::{Header, HeaderMapExt};
 use http::{header::HeaderName, HeaderMap, HeaderValue};
+use hyper::StatusCode;
 
 /// An error encountered during header resolution.
-// TODO: include header name?
-#[derive(Copy, Clone, Debug)]
-pub struct HeaderError;
+#[derive(Clone, Debug)]
+pub struct HeaderError(HeaderName);
 
 impl Reply for HeaderError {
     #[inline]
     fn into_response(self) -> Response {
-        // TODO
-        todo!()
+        let err = format!("header {:?} missing or malformed", self.0);
+
+        hyper::Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(err.into())
+            .unwrap()
     }
 }
 
@@ -40,7 +44,7 @@ pub fn header(
 ) -> impl Fn(Hlist![HeaderMap]) -> Result<Hlist![HeaderValue, HeaderMap], HeaderError> {
     move |cx| match cx.head.get(&name).cloned() {
         Some(h) => Ok(cx.prepend(h)),
-        None => Err(HeaderError),
+        None => Err(HeaderError(name.clone())),
     }
 }
 
@@ -93,7 +97,7 @@ pub fn header_opt(
 pub fn typed_header<H: Header>(cx: Hlist![HeaderMap]) -> Result<Hlist![H, HeaderMap], HeaderError> {
     match cx.head.typed_get() {
         Some(h) => Ok(cx.prepend(h)),
-        None => Err(HeaderError),
+        None => Err(HeaderError(H::name().clone())),
     }
 }
 
