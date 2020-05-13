@@ -3,7 +3,7 @@
 //! The macros exported here are documented in [hyperbole].
 #![warn(rust_2018_idioms)]
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 use syn::{
     parse_macro_input,
     punctuated::Punctuated,
@@ -18,7 +18,7 @@ pub fn record_args(_: TokenStream, item: TokenStream) -> TokenStream {
     // extract the basic stuff
     let fn_async = fn_item.sig.asyncness;
     let fn_generics = &fn_item.sig.generics;
-    let fn_name = format_ident!("{}", fn_item.sig.ident);
+    let fn_name = &fn_item.sig.ident;
     let fn_ret_ty = &fn_item.sig.output;
 
     // tracks whether arg[i] is a named field
