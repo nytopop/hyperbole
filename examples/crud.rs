@@ -102,6 +102,11 @@ struct Widget {
     count: u32,
 }
 
+fn missing_widget(id: u64) -> Response {
+    reply::jsonr(&record![error = format!("could not find widget {}", id)])
+        .with_status(StatusCode::NOT_FOUND)
+}
+
 #[record_args]
 async fn new(db: Db, name: String, desc: String, count: u32) -> Response {
     let mut db = db.0.lock().await;
@@ -129,14 +134,10 @@ async fn list(db: Db, range: IdRange) -> Response {
 
 #[record_args]
 async fn get(db: Db, id: u64) -> Response {
-    let db = db.0.lock().await;
-
-    if let Some(widget) = db.entries.get(&id) {
-        return reply::json(widget);
+    match db.0.lock().await.entries.get(&id) {
+        Some(widget) => reply::json(widget),
+        None => missing_widget(id),
     }
-
-    reply::jsonr(&record![error = format!("could not find widget {}", id)])
-        .with_status(StatusCode::NOT_FOUND)
 }
 
 #[record_args]
@@ -148,28 +149,23 @@ async fn update(
     count: Option<u32>,
 ) -> Response
 {
-    let mut db = db.0.lock().await;
+    match db.0.lock().await.entries.get_mut(&id) {
+        Some(widget) => {
+            name.map(|name| widget.name = name);
+            desc.map(|desc| widget.desc = desc);
+            count.map(|count| widget.count = count);
 
-    if let Some(widget) = db.entries.get_mut(&id) {
-        name.map(|name| widget.name = name);
-        desc.map(|desc| widget.desc = desc);
-        count.map(|count| widget.count = count);
+            reply::json(widget)
+        }
 
-        return reply::json(widget);
+        None => missing_widget(id),
     }
-
-    reply::jsonr(&record![error = format!("could not find widget {}", id)])
-        .with_status(StatusCode::NOT_FOUND)
 }
 
 #[record_args]
 async fn delete(db: Db, id: u64) -> Response {
-    let mut db = db.0.lock().await;
-
-    if let Some(widget) = db.entries.remove(&id) {
-        return reply::json(&widget);
+    match db.0.lock().await.entries.remove(&id) {
+        Some(widget) => reply::json(&widget),
+        None => missing_widget(id),
     }
-
-    reply::jsonr(&record![error = format!("could not find widget {}", id)])
-        .with_status(StatusCode::NOT_FOUND)
 }
