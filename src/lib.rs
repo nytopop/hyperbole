@@ -10,6 +10,57 @@
 #[doc(inline)]
 pub use frunk_core::{coproduct, hlist, Coprod, Hlist};
 
+/// An attribute macro to reduce boilerplate when writing functions that accept an hlist as
+/// an argument (handlers and middlewares).
+///
+/// This will translate the annotated function's argument list into an hlist. Any arguments
+/// whose names start with underscores will be translated to their type, while all other
+/// arguments will be translated to [named fields][field::Field] of their name and type.
+///
+/// # Examples
+///
+/// `fn f(a: u32, b: u32)` translates to `fn f(_: Hlist![f![a: u32], f![b: u32]])`.
+///
+/// `fn f(a: u32, _b: u32)` translates to `fn f(_: Hlist![f![a: u32], u32])`.
+///
+/// ```
+/// use hyperbole::{f, hlist, record, record_args, Hlist};
+///
+/// #[record_args]
+/// async fn my_func_a(first: u8, second: String, _third: Vec<u8>) {
+///     // do stuff
+/// }
+///
+/// async fn call_my_func_a() {
+///     // the translated function can be called using record syntax:
+///     my_func_a(record![first = 4, second = "test-string".to_owned(), [
+///         vec![1, 2, 3]
+///     ]])
+///     .await;
+///
+///     // or desugared hlist syntax:
+///     my_func_a(hlist![4.into(), "test-string".to_owned().into(), vec![
+///         1, 2, 3
+///     ]])
+///     .await;
+/// }
+///
+/// // 'my_func_a' above is translated to something like this:
+/// async fn my_func_b(cx: Hlist![f![first: u8], f![second: String], Vec<u8>]) {
+///     async fn my_func_b(first: u8, second: String, _third: Vec<u8>) {
+///         // do stuff
+///     }
+///
+///     my_func_b(
+///         cx.head.into_inner(),
+///         cx.tail.head.into_inner(),
+///         cx.tail.tail.head,
+///     )
+///     .await
+/// }
+/// ```
+pub use hyperbole_macros::record_args;
+
 pub mod body;
 mod combinators;
 pub mod field;
@@ -398,7 +449,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///
 /// ```
 /// use hyper::Body;
-/// use hyperbole::{access, f, path, record, App, Hlist};
+/// use hyperbole::{access, path, record, record_args, App, Hlist};
 ///
 /// let _ctx = App::empty()
 ///     .context_path(path![dynamic: u32])
@@ -417,13 +468,11 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     // GET /:dynamic/all/the/subpaths/discrete
 ///     .get(path!["discrete"], fn_handler);
 ///
-/// async fn fn_handler(cx: record![dynamic: u32, [Body]]) -> &'static [u8] {
-///     // methods defined on HCons also work
-///     let (d, cx) = cx.pluck::<f![dynamic], _>();
-///     let (b, _) = cx.pluck::<Body, _>();
-///
-///     println!("dynamic: {}", d);
-///     println!("reqbody: {:?}", b);
+/// // or use the record_args attribute to reduce boilerplate
+/// #[record_args]
+/// async fn fn_handler(dynamic: u32, _body: Body) -> &'static [u8] {
+///     println!("dynamic: {}", dynamic);
+///     println!("reqbody: {:?}", _body);
 ///
 ///     b"here's an octet-stream"
 /// }

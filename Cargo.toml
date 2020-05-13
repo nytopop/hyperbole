@@ -14,7 +14,11 @@ categories = ["web-programming", "asynchronous"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = [ "hyperbole_macros" ]
+
 [dependencies]
+hyperbole_macros = { path = "hyperbole_macros" }
 futures = "0.3.4"
 hyper = "0.13.5"
 http = "0.2.1"
