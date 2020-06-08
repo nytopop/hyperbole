@@ -282,6 +282,7 @@ enum Kind {
 /// A uri specification and well-typed parameter parser.
 ///
 /// See the [path!] macro for usage details.
+#[repr(C)]
 pub struct PathSpec<P> {
     segs: Vec<UriSeg>,
     tag: PhantomData<fn(P)>,
