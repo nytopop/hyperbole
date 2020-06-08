@@ -1,5 +1,5 @@
 //! An experimental web framework based on functional generic programming.
-#![feature(trait_alias, str_strip, const_generics, type_alias_impl_trait)]
+#![feature(trait_alias, const_generics, type_alias_impl_trait)]
 #![allow(incomplete_features, clippy::type_complexity)]
 #![doc(test(
     no_crate_inject,

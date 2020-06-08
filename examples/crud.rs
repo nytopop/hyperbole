@@ -1,5 +1,4 @@
 //! A simple json CRUD api.
-#![feature(str_strip)]
 use hyper::{server::Server, StatusCode};
 use hyperbole::{
     body, path, record, record_args,
