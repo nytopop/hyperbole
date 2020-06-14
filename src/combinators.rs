@@ -5,7 +5,7 @@ use super::{
 };
 use frunk_core::{
     coproduct::{CNil, CoprodUninjector, Coproduct},
-    hlist::{HNil, Plucker, Sculptor},
+    hlist::{HCons, HNil, Plucker, Sculptor},
 };
 use futures::future::{FutureExt, TryFutureExt};
 use std::{future::Future, marker::PhantomData, ops::Add, sync::Arc};
@@ -132,6 +132,45 @@ impl<Req: Send, P: Send> Link<Req, P> for Base {
         let fut = async { Ok((req, p)) };
 
         doc_hack! { Box::pin(fut), fut }
+    }
+}
+
+#[derive(Clone)]
+pub struct Inject<L, T> {
+    prev: L,
+    value: T,
+}
+
+impl<L, T> Inject<L, T> {
+    pub fn new(prev: L, value: T) -> Self {
+        Self { prev, value }
+    }
+}
+
+impl<Req, P, L, T> Link<Req, P> for Inject<L, T>
+where
+    L: Link<Req, P>,
+    T: Clone + Send,
+{
+    type Output = HCons<T, <L as Link<Req, P>>::Output>;
+
+    type Params = <L as Link<Req, P>>::Params;
+
+    type Error = <L as Link<Req, P>>::Error;
+
+    doc_hack! {
+        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
+        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
+    }
+
+    fn handle_link(&self, req: Req, p: P) -> Self::Future {
+        let head = self.value.clone();
+
+        let fut = (self.prev)
+            .handle_link(req, p)
+            .map_ok(move |(tail, p)| (HCons { head, tail }, p));
+
+        doc_hack! { Box::pin(fut) , fut }
     }
 }
 

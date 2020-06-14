@@ -70,7 +70,9 @@ pub mod reply;
 pub mod test;
 pub mod tree;
 
-use combinators::{Add2, Base, End, Link, Map, MapErr, MapErrs, Path, Then, TryMap, TryThen};
+use combinators::{
+    Add2, Base, End, Inject, Link, Map, MapErr, MapErrs, Path, Then, TryMap, TryThen,
+};
 use handler::{Chain, Handler, HandlerFn, NotFound};
 use reply::Reply;
 use tree::{Cluster, Node, Params, Parser, PathSpec, Route, Segment};
@@ -657,6 +659,24 @@ where
             app: self.app,
             chain: self.chain.link_next(wrap),
         }
+    }
+
+    /// Inject a cloneable value into the request scoped state.
+    ///
+    /// # Examples
+    /// ```
+    /// use hyperbole::{f, hlist, record, App, Hlist};
+    ///
+    /// let _ctx = App::empty()
+    ///     .context()
+    ///     .inject("just an &str")
+    ///     .map(|cx: Hlist![&str]| hlist![])
+    ///     .inject(f![xyz = "this is a named field"])
+    ///     .map(|cx: record![xyz]| hlist![]);
+    /// ```
+    pub fn inject<T: Clone>(self, value: T) -> Ctx<I, P, Inject<L, T>>
+    where Inject<L, T>: Link<Init<I>, P> {
+        self.link_next(|link| Inject::new(link, value))
     }
 
     /// Transform a subset of the request scoped state with a closure.
