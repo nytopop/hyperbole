@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Facilities for testing hyperbole apps.
 use super::App;
 use hyper::{
     body::{to_bytes, Bytes},
