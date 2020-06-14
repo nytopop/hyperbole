@@ -70,7 +70,7 @@ pub mod reply;
 pub mod test;
 pub mod tree;
 
-use combinators::{Add2, Base, CatchErr, End, Link, Map, MapErr, Path, Then, TryMap, TryThen};
+use combinators::{Add2, Base, End, Link, Map, MapErr, MapErrs, Path, Then, TryMap, TryThen};
 use handler::{Chain, Handler, HandlerFn, NotFound};
 use reply::Reply;
 use tree::{Cluster, Node, Params, Parser, PathSpec, Route, Segment};
@@ -838,14 +838,14 @@ where
     ///     .map(|cx: record![]| cx)
     ///     .collapse();
     /// ```
-    pub fn map_errs<F, E>(self, f: F) -> Ctx<I, P, MapErr<L, F>>
+    pub fn map_errs<F, E>(self, f: F) -> Ctx<I, P, MapErrs<L, F>>
     where
         F: Fn(<L as Link<Init<I>, P>>::Error) -> E,
         E: IsCoproduct + Reply,
         L: Link<Init<I>, P>,
-        MapErr<L, F>: Link<Init<I>, P>,
+        MapErrs<L, F>: Link<Init<I>, P>,
     {
-        self.link_next(|link| MapErr::new(link, f))
+        self.link_next(|link| MapErrs::new(link, f))
     }
 
     /// Transform a single variant of the context's error type with a closure.
@@ -874,13 +874,13 @@ where
     ///     .map_err(|e: Vec<u8>| "it was Vec<u8>")
     ///     .collapse();
     /// ```
-    pub fn map_err<F, E, Ix, R>(self, f: F) -> Ctx<I, P, CatchErr<L, F, E, Ix>>
+    pub fn map_err<F, E, Ix, R>(self, f: F) -> Ctx<I, P, MapErr<L, F, E, Ix>>
     where
         F: Fn(E) -> R,
         R: Reply,
-        CatchErr<L, F, E, Ix>: Link<Init<I>, P>,
+        MapErr<L, F, E, Ix>: Link<Init<I>, P>,
     {
-        self.link_next(|link| CatchErr::new(link, f))
+        self.link_next(|link| MapErr::new(link, f))
     }
 
     /// Append additional path segments to this context's base path. Any new parameters parsed

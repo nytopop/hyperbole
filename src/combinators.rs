@@ -311,15 +311,15 @@ where
     }
 }
 
-pub struct MapErr<L, F> {
+pub struct MapErrs<L, F> {
     prev: L,
     next: Arc<F>,
     tag: PhantomData<()>,
 }
 
-derive_clone_new_3! { MapErr<L, F> where L: Clone, F }
+derive_clone_new_3! { MapErrs<L, F> where L: Clone, F }
 
-impl<Req, P, L, F, E> Link<Req, P> for MapErr<L, F>
+impl<Req, P, L, F, E> Link<Req, P> for MapErrs<L, F>
 where
     L: Link<Req, P>,
     F: Fn(<L as Link<Req, P>>::Error) -> E + Sync + Send,
@@ -345,15 +345,15 @@ where
     }
 }
 
-pub struct CatchErr<L, F, E, Ix> {
+pub struct MapErr<L, F, E, Ix> {
     prev: L,
     next: Arc<F>,
     tag: PhantomData<fn(E, Ix)>,
 }
 
-derive_clone_new_3! { CatchErr<L, F, E, Ix> where L: Clone, F, E, Ix }
+derive_clone_new_3! { MapErr<L, F, E, Ix> where L: Clone, F, E, Ix }
 
-impl<Req, P, L, F, E, Ix, R> Link<Req, P> for CatchErr<L, F, E, Ix>
+impl<Req, P, L, F, E, Ix, R> Link<Req, P> for MapErr<L, F, E, Ix>
 where
     L: Link<Req, P>,
     <L as Link<Req, P>>::Error: CoprodUninjector<E, Ix>,
