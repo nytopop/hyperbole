@@ -67,6 +67,7 @@ pub mod field;
 mod handler;
 pub mod mw;
 pub mod reply;
+pub mod test;
 pub mod tree;
 
 use combinators::{Add2, Base, CatchErr, End, Link, Map, MapErr, Path, Then, TryMap, TryThen};
@@ -331,7 +332,6 @@ impl<I: Clone> App<I> {
             .map(|n| n.lookup(path))
     }
 
-    // TODO: make this public?
     fn dispatch(&self, req: Request<Body>, addr: SocketAddr) -> BoxFuture<'static, Response> {
         #[inline]
         fn swap_trailing_slash(path: &str) -> Cow<'_, str> {
@@ -360,7 +360,6 @@ impl<I: Clone> App<I> {
                     StatusCode::PERMANENT_REDIRECT
                 };
 
-                // TODO: make sure this redirect nonsense works
                 let resp = hyper::Response::builder()
                     .status(code)
                     .header(LOCATION, &*swap_trailing_slash(path))
@@ -373,6 +372,12 @@ impl<I: Clone> App<I> {
             // TODO: OPTIONS
             _ => self.not_found.handle(req, addr),
         }
+    }
+
+    /// Create a test client for this app.
+    #[inline]
+    pub fn test_client(self) -> test::Client<I> {
+        test::Client { app: self }
     }
 }
 
