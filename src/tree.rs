@@ -213,6 +213,8 @@ pub(super) type Parsed<P> = Result<P, <P as Parser<Segment>>::Error>;
 #[doc(hidden)]
 pub type Params<P> = HCons<Parsed<P>, HNil>;
 
+/// The empty hlist satisfies any kind of parser impl, because in either case it doesn't
+/// have to do any parsing.
 impl<Kind> Parser<Kind> for HNil {
     type Error = CNil;
 
@@ -222,6 +224,8 @@ impl<Kind> Parser<Kind> for HNil {
     }
 }
 
+/// A plain hlist (without nested parse results) is a `Segment` parser, meaning it can parse
+/// a series of `FromStr` segments.
 impl<Head, Tail> Parser<Segment> for HCons<Head, Tail>
 where
     Head: FromStr,
@@ -245,6 +249,12 @@ where
     }
 }
 
+/// An hlist of parse results is a `Cluster` parser, meaning it can separately parse one or more
+/// clusters of segments. Each cluster is parsed individually so that they can be injected into a
+/// context piece-wise.
+///
+/// Generally speaking, the `Error` defined here should recursively become `CNil`, an enum that
+/// is uninhabitable. Any parse errors in a cluster are included as part of the successful result.
 impl<Head, Tail> Parser<Cluster> for HCons<Parsed<Head>, Tail>
 where
     Head: Parser<Segment>,

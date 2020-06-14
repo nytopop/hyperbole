@@ -535,7 +535,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     .map(|cx: Hlist![]| hlist![A(1)])
 ///     // merge an A (state now contains two `A`s)
 ///     .map(|cx: Hlist![]| hlist![A(2)])
-///     // this fails during type inference, because its ambiguous _which_ A we want
+///     // this fails during type inference, because it's ambiguous _which_ A we want
 ///     //
 ///     // error[E0282]: type annotations needed
 ///     //     cannot infer type for type parameter `TailIndex`
@@ -560,7 +560,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     .map(|cx: record![]| record![second = A(2)])
 ///     // we want the A called 'second'
 ///     .map(|cx: record![second]| cx)
-///     // we the want A called 'first'
+///     // we want the A called 'first'
 ///     .map(|cx: record![first]| cx)
 ///     // we want both of them
 ///     .map(|cx: record![first, second]| cx)

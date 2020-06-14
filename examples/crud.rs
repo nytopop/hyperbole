@@ -65,11 +65,17 @@ impl FromStr for IdRange {
 async fn main() -> hyper::Result<()> {
     let app = App::new(record![db = Db::default()])
         .context_path(path!["widgets"])
+        // POST /widgets/new
         .post_with(path!["new"], body::jsonr::<record![name, desc, count]>, new)
+        // GET /widgets
+        // GET /widgets?range=4..30
         .get(path![? range: IdRange], list)
         .path(path![id: u64])
+        // GET /widgets/:id
         .get(path![], get)
+        // PATCH /widgets/:id {"name": "blabla", "desc": null, "count": 40}
         .patch_with(path![], body::jsonr::<record![name, desc, count]>, update)
+        // DELETE /widgets/:id
         .delete(path![], delete)
         .collapse();
 

@@ -506,6 +506,7 @@ impl<T: DeserializeOwned, Tail: IsoDecode> IsoDecode for HCons<T, Tail> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quickcheck_macros::quickcheck;
 
     fn iso_de<T: IsoDecode>(input: &str) -> T {
         T::from_repr(serde_json::from_str(input).unwrap())
@@ -531,7 +532,7 @@ mod tests {
         assert_eq!(input, encoded);
     }
 
-    #[quickcheck_macros::quickcheck]
+    #[quickcheck]
     fn serde_iso_roundtrips(x: u32, y: String, z: f32) {
         ser_de_ser(record![x = x, y = y.clone()]);
         ser_de_ser(record![y = y, x = x, z = z]);

@@ -79,7 +79,7 @@ macro_rules! doc_hack {
 }
 
 macro_rules! derive_clone_new_3 {
-    ( $t:ty where $( $p:ident $( : $bound:ident )? ),+) => {
+    ($t:ty where $( $p:ident $( : $bound:ident )? ),+) => {
         impl<$( $p $( : $bound )? ),+> Clone for $t {
             fn clone(&self) -> Self {
                 let prev = self.prev.clone();
