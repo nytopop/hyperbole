@@ -16,7 +16,6 @@ pub fn record_args(_: TokenStream, item: TokenStream) -> TokenStream {
     let fn_item = parse_macro_input!(item as ItemFn);
 
     // extract the basic stuff
-    let fn_async = fn_item.sig.asyncness;
     let fn_generics = &fn_item.sig.generics;
     let fn_name = &fn_item.sig.ident;
     let fn_ret_ty = &fn_item.sig.output;
@@ -36,6 +35,9 @@ pub fn record_args(_: TokenStream, item: TokenStream) -> TokenStream {
                     }
                     _ => quote!(#ty),
                 },
+
+                Pat::Wild(_) => quote!(#ty),
+
                 pat => Error::new_spanned(pat, "#[record_args] arguments must be identifiers")
                     .to_compile_error(),
             },
@@ -70,6 +72,7 @@ pub fn record_args(_: TokenStream, item: TokenStream) -> TokenStream {
         .collect();
 
     // make sure to call .await if we're dealing with an async fn
+    let fn_async = fn_item.sig.asyncness;
     let fn_dot = fn_async.map(|_| Dot::default());
     let fn_await = fn_async.map(|_| Await::default());
 

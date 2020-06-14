@@ -31,7 +31,7 @@ impl Reply for JsonBodyError {
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::json, path, App, Hlist};
+/// use hyperbole::{body::json, path, record_args, App};
 /// use serde::Deserialize;
 ///
 /// #[derive(Deserialize)]
@@ -40,7 +40,8 @@ impl Reply for JsonBodyError {
 ///     y: String,
 /// }
 ///
-/// async fn the_thing(_: Hlist![ThingRequest]) -> &'static str {
+/// #[record_args]
+/// async fn the_thing(_: ThingRequest) -> &'static str {
 ///     "yepperz"
 /// }
 ///
