@@ -506,7 +506,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     // attempt to parse the body as a json object:
 ///     .try_then(jsonr::<record![x: u32, y: String]>)
 ///     // if the above fails, we can adjust the error with map_err:
-///     .map_err(|err: Box<JsonBodyError>| err)
+///     .map_err(|err: JsonBodyError| err)
 ///     // or we can adjust all possible errors with map_errs:
 ///     .map_errs(|errs| {
 ///         let code = StatusCode::INTERNAL_SERVER_ERROR;

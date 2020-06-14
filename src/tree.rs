@@ -10,6 +10,7 @@ use frunk_core::{
 use hyper::StatusCode;
 use percent_encoding::percent_decode_str;
 use std::{borrow::Cow, cmp, error::Error, fmt, marker::PhantomData, mem, ops::Add, str::FromStr};
+use thiserror::Error;
 
 /// Expands to a well-typed path specification.
 ///
@@ -175,8 +176,9 @@ macro_rules! __path_internal {
 /// An error encountered during uri parsing.
 ///
 /// This struct wraps some type's [FromStr::Err][std::str::FromStr::Err].
-#[derive(Clone, Debug)]
-pub struct UriError<E> {
+#[derive(Clone, Debug, Error)]
+#[error("failed to parse {:?} in uri: {}", .item, .err)]
+pub struct UriError<E: Error> {
     /// The (uridecoded) segment that failed to parse.
     pub item: String,
 
@@ -188,7 +190,7 @@ impl<E: Send + Error> Reply for UriError<E> {
     fn into_response(self) -> Response {
         hyper::Response::builder()
             .status(StatusCode::BAD_REQUEST)
-            .body(format!("{:?}: {}", self.item, self.err).into())
+            .body(format!("{}", self).into())
             .unwrap()
     }
 }

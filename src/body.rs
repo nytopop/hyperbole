@@ -2,29 +2,27 @@
 use super::{field::IsoDecode, reply::Reply, Response};
 use bytes::buf::BufExt;
 use frunk_core::{hlist, Hlist};
-use hyper::{Body, StatusCode};
+use hyper::{body::aggregate, Body, StatusCode};
 use serde::de::DeserializeOwned;
+use thiserror::Error;
 
 /// An error encountered during json deserialization of a request body.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum JsonBodyError {
     /// Error occurred while reading the request body.
-    Body(hyper::Error),
+    #[error("failed to read body: {}", .0)]
+    Body(#[from] hyper::Error),
     /// Error occurred during deserialization.
-    Json(serde_json::Error),
+    #[error("failed to parse body: {}", .0)]
+    Json(#[from] serde_json::Error),
 }
 
 impl Reply for JsonBodyError {
     #[inline]
     fn into_response(self) -> Response {
-        let err = match self {
-            JsonBodyError::Body(e) => format!("failed to read body: {}", e),
-            JsonBodyError::Json(e) => format!("failed to parse body as json: {}", e),
-        };
-
         hyper::Response::builder()
             .status(StatusCode::BAD_REQUEST)
-            .body(err.into())
+            .body(format!("{}", self).into())
             .unwrap()
     }
 }
@@ -55,16 +53,11 @@ impl Reply for JsonBodyError {
 ///     .get(path!["the-thing" / "via-mw"], the_thing)
 ///     .collapse();
 /// ```
-pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Box<JsonBodyError>> {
-    let bodyr = hyper::body::aggregate(cx.head)
-        .await
-        .map_err(JsonBodyError::Body)
-        .map_err(Box::new)?
-        .reader();
+pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], JsonBodyError> {
+    let bodyr = aggregate(cx.head).await?.reader();
 
     serde_json::from_reader(bodyr)
         .map_err(JsonBodyError::Json)
-        .map_err(Box::new)
         .map(|t| hlist![t])
 }
 
@@ -117,9 +110,10 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Bo
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::jsonr, path, record, App};
+/// use hyperbole::{body::jsonr, path, record, record_args, App};
 ///
-/// async fn the_thing(_: record![x: u32, y: String, z: f64]) -> &'static str {
+/// #[record_args]
+/// async fn the_thing(x: u32, y: String, z: f64) -> &'static str {
 ///     "yepperz"
 /// }
 ///
@@ -135,16 +129,11 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Bo
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
 /// [Ctx::try_then]: super::Ctx::try_then
-pub async fn jsonr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, Box<JsonBodyError>> {
-    let bodyr = hyper::body::aggregate(cx.head)
-        .await
-        .map_err(JsonBodyError::Body)
-        .map_err(Box::new)?
-        .reader();
+pub async fn jsonr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, JsonBodyError> {
+    let bodyr = aggregate(cx.head).await?.reader();
 
     serde_json::from_reader(bodyr)
         .map_err(JsonBodyError::Json)
-        .map_err(Box::new)
         .map(T::from_repr)
 }
 

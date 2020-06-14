@@ -13,14 +13,15 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
+use thiserror::Error;
 use tokio::sync::Mutex;
 
-#[derive(Debug, err_derive::Error)]
+#[derive(Debug, Error)]
 enum InvalidIdRange {
-    #[error(display = "invalid id range")]
+    #[error("invalid id range")]
     Bounds,
-    #[error(display = "{}", _0)]
-    Num(#[source] ParseIntError),
+    #[error("{}", .0)]
+    Num(#[from] ParseIntError),
 }
 
 #[derive(Copy, Clone, Default)]

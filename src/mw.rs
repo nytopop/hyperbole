@@ -4,19 +4,19 @@ use frunk_core::Hlist;
 use headers::{Header, HeaderMapExt};
 use http::{header::HeaderName, HeaderMap, HeaderValue};
 use hyper::StatusCode;
+use thiserror::Error;
 
 /// An error encountered during header resolution.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
+#[error("header {:?} missing or malformed", .0)]
 pub struct HeaderError(HeaderName);
 
 impl Reply for HeaderError {
     #[inline]
     fn into_response(self) -> Response {
-        let err = format!("header {:?} missing or malformed", self.0);
-
         hyper::Response::builder()
             .status(StatusCode::BAD_REQUEST)
-            .body(err.into())
+            .body(format!("{}", self).into())
             .unwrap()
     }
 }
