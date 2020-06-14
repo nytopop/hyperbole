@@ -150,31 +150,3 @@ pub async fn jsonr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, Box<JsonBodyErro
 
 // TODO: form + multipart form
 // TODO: record variants of ^
-
-#[cfg(test)]
-mod tests {
-    use super::{super::record, *};
-    use hyper::body::to_bytes;
-
-    async fn reply_str<R: Reply>(r: R) -> String {
-        let body = r.into_response().into_body();
-        let bin = to_bytes(body).await.unwrap();
-
-        String::from_utf8_lossy(&*bin).into_owned()
-    }
-
-    #[tokio::test]
-    async fn test_jsonr_errors() {
-        let input = r#"{"a":3,"b":32324,"c":345345.34}"#;
-
-        let res = jsonr::<record![a: String, b: u32, c: f32,]>(hlist![input.into()])
-            .await
-            .unwrap_err();
-        let body = reply_str(res).await;
-
-        assert_eq!(
-            "failed to parse body as json: invalid type: integer `3`, expected a string at line 1 column 31",
-            body
-        );
-    }
-}
