@@ -4,6 +4,7 @@ use hyper::{
     body::{to_bytes, Bytes},
     Body, Method, Request, Response,
 };
+use serde::{de::DeserializeOwned, Serialize};
 
 const LOCAL: ([u8; 4], u16) = ([127, 0, 0, 1], 4321);
 
@@ -71,6 +72,12 @@ impl<'a, I: Clone> Call<'a, I> {
         self
     }
 
+    /// Set a json request body for this call.
+    pub fn body_json<T: Serialize>(mut self, body: &T) -> Self {
+        *self.req.body_mut() = serde_json::to_vec(body).unwrap().into();
+        self
+    }
+
     /// Dispatch the request defined by this call.
     pub async fn dispatch_body(self) -> Response<Body> {
         self.app.dispatch(self.req, LOCAL.into()).await
@@ -89,5 +96,13 @@ impl<'a, I: Clone> Call<'a, I> {
         self.dispatch_bytes()
             .await
             .map(|b| String::from_utf8_lossy(&*b).into_owned())
+    }
+
+    /// Dispatch the request defined by this call, retrieving the response body as a decoded
+    /// json object.
+    pub async fn dispatch_json<T: DeserializeOwned>(self) -> Response<T> {
+        self.dispatch_bytes()
+            .await
+            .map(|b| serde_json::from_slice(&*b).unwrap())
     }
 }
