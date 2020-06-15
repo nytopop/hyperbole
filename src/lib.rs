@@ -693,9 +693,10 @@ where
     /// # Examples
     /// ```
     /// use hyper::Body;
-    /// use hyperbole::{hlist, App, Hlist};
+    /// use hyperbole::{hlist, record_args, App, Hlist};
     ///
-    /// fn fun(cx: Hlist![Body, u32]) -> Hlist![] {
+    /// #[record_args]
+    /// fn fun(_: Body, _: u32) -> Hlist![] {
     ///     hlist![]
     /// }
     ///
@@ -771,9 +772,10 @@ where
     /// # Examples
     /// ```
     /// use hyper::Body;
-    /// use hyperbole::{hlist, App, Hlist};
+    /// use hyperbole::{hlist, record_args, App, Hlist};
     ///
-    /// async fn fun(cx: Hlist![Body]) -> Hlist![] {
+    /// #[record_args]
+    /// async fn fun(_: Body) -> Hlist![] {
     ///     hlist![]
     /// }
     ///
@@ -876,13 +878,14 @@ where
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{record, App};
+    /// use hyperbole::{record, record_args, App};
     ///
     /// fn fallible_a(_: record![]) -> Result<record![], String> {
     ///     Err("uh oh".to_owned())
     /// }
     ///
-    /// fn fallible_b(_: record![]) -> Result<record![], Vec<u8>> {
+    /// #[record_args]
+    /// fn fallible_b() -> Result<record![], Vec<u8>> {
     ///     Err(b"uh oh".to_vec())
     /// }
     ///
@@ -955,9 +958,10 @@ where
     /// # Examples
     /// ```
     /// use hyper::Body;
-    /// use hyperbole::{hlist, path, record, reply::Reply, App, Hlist};
+    /// use hyperbole::{hlist, path, record, record_args, reply::Reply, App, Hlist};
     ///
-    /// async fn doit(cx: record![baz: f64]) -> &'static str {
+    /// #[record_args]
+    /// async fn doit(baz: f64) -> &'static str {
     ///     "&'static str implements Reply"
     /// }
     ///
