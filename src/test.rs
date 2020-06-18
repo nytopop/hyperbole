@@ -24,7 +24,7 @@ pub struct Client<I> {
     pub(super) app: App<I>,
 }
 
-impl<I: Clone> Client<I> {
+impl<I: Sync + Send + Clone + 'static> Client<I> {
     /// Prepare a call with the provided `method` and `path`.
     pub fn call<'a>(&'a self, method: Method, path: &str) -> Call<'a, I> {
         Call {
@@ -65,7 +65,7 @@ pub struct Call<'a, I> {
     req: Request<Body>,
 }
 
-impl<'a, I: Clone> Call<'a, I> {
+impl<'a, I: Sync + Send + Clone + 'static> Call<'a, I> {
     /// Set a request body for this call.
     pub fn body<B: Into<Body>>(mut self, body: B) -> Self {
         *self.req.body_mut() = body.into();

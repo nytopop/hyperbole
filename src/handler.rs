@@ -10,7 +10,7 @@ use hyper::{
     header::{CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS},
     Body, Request, StatusCode,
 };
-use std::{future::Future, marker::PhantomData, net::SocketAddr, ops::Add};
+use std::{net::SocketAddr, ops::Add};
 
 pub trait Handler: Sync + Send {
     fn handle(&self, req: Request<Body>, addr: SocketAddr) -> BoxFuture<'static, Response>;
@@ -30,31 +30,6 @@ impl Handler for NotFound {
                 .unwrap(),
         )
         .boxed()
-    }
-}
-
-pub struct HandlerFn<P, Fut> {
-    fun: P,
-    tag: PhantomData<fn(Fut)>,
-}
-
-impl<P: Fn(Request<Body>, SocketAddr) -> Fut, Fut> HandlerFn<P, Fut> {
-    pub fn new(fun: P) -> Self {
-        Self {
-            fun,
-            tag: PhantomData,
-        }
-    }
-}
-
-impl<P, Fut, Resp> Handler for HandlerFn<P, Fut>
-where
-    P: Fn(Request<Body>, SocketAddr) -> Fut + Sync + Send,
-    Fut: Future<Output = Resp> + Send + 'static,
-    Resp: Reply + 'static,
-{
-    fn handle(&self, req: Request<Body>, addr: SocketAddr) -> BoxFuture<'static, Response> {
-        (self.fun)(req, addr).map(Reply::into_response).boxed()
     }
 }
 

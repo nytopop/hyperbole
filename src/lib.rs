@@ -73,7 +73,7 @@ pub mod tree;
 use combinators::{
     Add2, Base, End, Inject, Link, Map, MapErr, MapErrs, Path, Then, TryMap, TryThen,
 };
-use handler::{Chain, Handler, HandlerFn, NotFound};
+use handler::{Chain, Handler, NotFound};
 use reply::Reply;
 use tree::{Cluster, Node, Params, Parser, PathSpec, Route, Segment};
 
@@ -141,7 +141,7 @@ impl<I> Deref for AppService<I> {
     }
 }
 
-impl<I: Clone> Service<Request<Body>> for AppService<I> {
+impl<I: Sync + Send + Clone + 'static> Service<Request<Body>> for AppService<I> {
     type Response = Response;
 
     type Error = Infallible;
@@ -214,7 +214,7 @@ impl App<HNil> {
     }
 }
 
-impl<I: Clone> App<I> {
+impl<I: Sync + Send + Clone + 'static> App<I> {
     /// Returns a new [App] with the provided top-level state.
     ///
     /// The `state` passed here should be an hlist as constructed by [hlist!] or [record!],
@@ -296,19 +296,34 @@ impl<I: Clone> App<I> {
     /// Configure a handler for the case where an incoming request does not match any existing
     /// routes.
     ///
+    /// As in [Ctx::handle], the `handler` closure should accept an hlist argument, and return a
+    /// future that evaluates to an http response (via the [Reply] trait).
+    ///
+    /// The argument hlist may consist of any subset of types from [Init].
+    ///
     /// # Examples
     /// ```
-    /// use hyperbole::App;
+    /// use hyper::{Method, StatusCode, Uri};
+    /// use hyperbole::{record_args, reply::Reply, App};
     ///
-    /// let _app = App::empty().not_found(|req, addr| async { "not found" });
+    /// #[record_args]
+    /// async fn handler(_m: Method, _u: Uri) -> impl Reply {
+    ///     "not found".with_status(StatusCode::NOT_FOUND)
+    /// }
+    ///
+    /// let _app = App::empty().not_found(handler);
     /// ```
-    pub fn not_found<P, Fut, Resp>(mut self, fun: P) -> Self
+    pub fn not_found<F, Args, Ix, Fut, Resp>(mut self, handler: F) -> Self
     where
-        P: Fn(Request<Body>, SocketAddr) -> Fut + Sync + Send + 'static,
+        F: Fn(Args) -> Fut + Sync + Send + 'static,
         Fut: Future<Output = Resp> + Send + 'static,
         Resp: Reply + 'static,
+        End<Base, F, Args, Ix>: Link<Init<I>, HNil, Output = Response, Params = HNil> + 'static,
     {
-        self.not_found = Box::new(HandlerFn::new(fun));
+        let chain: Chain<I, HNil, End<Base, F, Args, Ix>> =
+            Chain::new(self.state.clone(), path![]).link_next(|link| End::new(link, handler));
+
+        self.not_found = Box::new(chain);
         self
     }
 
