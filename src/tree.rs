@@ -64,7 +64,7 @@ use thiserror::Error;
 /// # Query parameters
 /// Query parameters may be added to the end of a [path!], but do not affect routing. They are
 /// similar to dynamic segments in that they are parsed by a [FromStr][fromstr] impl after a
-/// request is matches a route.
+/// request matches a route.
 ///
 /// They may be specified as a comma separated list of `name: type` pairs preceded by a `?`
 /// after all static, dynamic, and catch-all segments. The order of query parameters does not
