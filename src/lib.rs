@@ -868,7 +868,7 @@ where
     /// let _ctx = App::empty()
     ///     .context()
     ///     // without any fallible combinators, the error is an uninhabitable enum:
-    ///     .map_errs(|_| <Coprod![&str]>::inject("impossible!"))
+    ///     .map_errs(|err: Coprod![]| -> Coprod![] { match err {} })
     ///     .map(|cx: record![]| cx)
     ///     .collapse();
     /// ```
