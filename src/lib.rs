@@ -365,8 +365,6 @@ impl<I: Sync + Send + Clone + 'static> App<I> {
         let method = req.method();
         let path = req.uri().path();
 
-        // TODO: request logging
-
         match self.lookup_route(method, path) {
             Some(Route { entry: Some(h), .. }) => h.handle(req, addr),
 
@@ -386,7 +384,6 @@ impl<I: Sync + Send + Clone + 'static> App<I> {
                 Box::pin(async { resp })
             }
 
-            // TODO: OPTIONS
             _ => self.not_found.handle(req, addr),
         }
     }
