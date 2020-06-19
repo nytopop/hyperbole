@@ -2,8 +2,10 @@
 use super::{reply::Reply, Response};
 use frunk_core::Hlist;
 use headers::{Header, HeaderMapExt};
-use http::{header::HeaderName, HeaderMap, HeaderValue};
+use http::{header::HeaderName, HeaderMap, HeaderValue, Method, Uri};
 use hyper::StatusCode;
+use hyper_staticfile::{resolve_path, ResponseBuilder};
+use std::{future::Future, io, path::PathBuf};
 use thiserror::Error;
 
 /// An error encountered during header resolution.
@@ -143,4 +145,54 @@ pub fn typed_header_opt<H: Header>(cx: Hlist![HeaderMap]) -> Hlist![Option<H>, H
 /// ```
 pub async fn extract<T: Reply>(cx: Hlist![T]) -> T {
     cx.head
+}
+
+/// A filesystem error.
+#[derive(Debug, Error)]
+pub enum FsError {
+    /// An IO error.
+    #[error("io error: {}", .0)]
+    Io(#[from] io::Error),
+
+    /// An HTTP error.
+    #[error("http error: {}", .0)]
+    Http(#[from] http::Error),
+}
+
+impl Reply for FsError {
+    #[inline]
+    fn into_response(self) -> Response {
+        hyper::Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body("internal server error".into())
+            .unwrap()
+    }
+}
+
+/// Handle a request by serving a file from the filesystem.
+///
+/// # Examples
+/// ```
+/// use hyperbole::{mw, path, App};
+///
+/// let _app = App::empty()
+///     .not_found(mw::filesystem("/opt"))
+///     .context()
+///     .get(path![], mw::filesystem("/srv"))
+///     .collapse();
+/// ```
+pub fn filesystem(base_path: &str) -> impl Fn(Hlist![Method, Uri, HeaderMap]) -> FsFuture {
+    let path = PathBuf::from(base_path);
+
+    move |cx| fs_inner(path.clone(), cx.head, cx.tail.head, cx.tail.tail.head)
+}
+
+/// An opaque future returned by [filesystem].
+pub type FsFuture = impl Future<Output = Result<Response, FsError>>;
+
+async fn fs_inner(path: PathBuf, m: Method, u: Uri, h: HeaderMap) -> Result<Response, FsError> {
+    ResponseBuilder::new()
+        .request_parts(&m, &u, &h)
+        .build(resolve_path(path, u.path()).await?)
+        .map_err(|e| e.into())
 }
