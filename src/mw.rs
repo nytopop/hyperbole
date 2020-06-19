@@ -1,11 +1,11 @@
 //! Middleware combinators.
-use super::{reply::Reply, Response};
+use super::{f, reply::Reply, Response};
 use frunk_core::Hlist;
 use headers::{Header, HeaderMapExt};
 use http::{header::HeaderName, HeaderMap, HeaderValue, Method, Uri};
 use hyper::StatusCode;
 use hyper_staticfile::{resolve_path, ResponseBuilder};
-use std::{future::Future, io, path::PathBuf};
+use std::{convert::TryFrom, future::Future, io, path::PathBuf};
 use thiserror::Error;
 
 /// An error encountered during header resolution.
@@ -169,30 +169,61 @@ impl Reply for FsError {
     }
 }
 
-/// Handle a request by serving a file from the filesystem.
+/// Handle a request by serving a file from the filesystem. The file to be served will be the
+/// request uri path appended to `base_path`.
 ///
 /// # Examples
 /// ```
 /// use hyperbole::{mw, path, App};
 ///
 /// let _app = App::empty()
-///     .not_found(mw::filesystem("/opt"))
+///     .not_found(mw::filesystem("/srv"))
 ///     .context()
-///     .get(path![], mw::filesystem("/srv"))
+///     .get(path!["a" / "whatever.jpg"], mw::filesystem("/srv"))
+///     .get(path!["b" / *extra: String], mw::filesystem("/opt"))
 ///     .collapse();
 /// ```
 pub fn filesystem(base_path: &str) -> impl Fn(Hlist![Method, Uri, HeaderMap]) -> FsFuture {
-    let path = PathBuf::from(base_path);
+    let root = PathBuf::from(base_path);
 
-    move |cx| fs_inner(path.clone(), cx.head, cx.tail.head, cx.tail.tail.head)
+    move |cx| fs_inner(root.clone(), cx.head, Ok(cx.tail.head), cx.tail.tail.head)
 }
 
-/// An opaque future returned by [filesystem].
+/// Handle a request by serving a file from the filesystem. Unlike [filesystem], this will not
+/// serve the complete request uri, but the named field `path: String`.
+///
+/// The file to be served will be the value of `path` appended to `base_path`.
+///
+/// # Examples
+/// ```
+/// use hyperbole::{mw, path, App};
+///
+/// let _app = App::empty()
+///     .context()
+///     .get(path!["files" / *path: String], mw::filesystem_path("/srv"))
+///     .collapse();
+/// ```
+pub fn filesystem_path(
+    base_path: &str,
+) -> impl Fn(Hlist![Method, f![path: String], HeaderMap]) -> FsFuture {
+    let root = PathBuf::from(base_path);
+
+    move |cx| {
+        let uri = Uri::try_from(cx.tail.head.into_inner()).map_err(|e| e.into());
+        fs_inner(root.clone(), cx.head, uri, cx.tail.tail.head)
+    }
+}
+
+/// The opaque future returned by [filesystem] and [filesystem_path].
 pub type FsFuture = impl Future<Output = Result<Response, FsError>>;
 
-async fn fs_inner(path: PathBuf, m: Method, u: Uri, h: HeaderMap) -> Result<Response, FsError> {
+type UriRes = http::Result<Uri>;
+
+async fn fs_inner(path: PathBuf, m: Method, u: UriRes, h: HeaderMap) -> Result<Response, FsError> {
+    let uri = u?;
+
     ResponseBuilder::new()
-        .request_parts(&m, &u, &h)
-        .build(resolve_path(path, u.path()).await?)
+        .request_parts(&m, &uri, &h)
+        .build(resolve_path(path, uri.path()).await?)
         .map_err(|e| e.into())
 }
