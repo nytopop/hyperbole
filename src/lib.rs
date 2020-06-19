@@ -378,7 +378,7 @@ impl<I: Sync + Send + Clone + 'static> App<I> {
                 let resp = hyper::Response::builder()
                     .status(code)
                     .header(LOCATION, &*swap_trailing_slash(path))
-                    .body("".into())
+                    .body(Body::empty())
                     .unwrap();
 
                 Box::pin(async { resp })

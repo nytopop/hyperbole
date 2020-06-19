@@ -15,7 +15,7 @@ fn request(m: Method, path: &str) -> Request<Body> {
     Request::builder()
         .method(m)
         .uri(format!("http://testclient{}", path))
-        .body("".into())
+        .body(Body::empty())
         .unwrap()
 }
 
