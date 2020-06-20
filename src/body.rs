@@ -137,6 +137,3 @@ pub async fn jsonr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, JsonBodyError> {
         .map_err(JsonBodyError::Json)
         .map(T::from_repr)
 }
-
-// TODO: form + multipart form
-// TODO: record variants of ^
