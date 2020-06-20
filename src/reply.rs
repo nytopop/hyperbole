@@ -1,13 +1,19 @@
 //! Helpers for replying to requests.
-use super::{field::IsoEncode, Response};
+use super::{f, field::IsoEncode, Hlist, Response};
 use frunk_core::coproduct::{CNil, Coproduct};
 use headers::{Header, HeaderMapExt};
-use hyper::{
-    header::{CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS},
-    StatusCode,
-};
+use http::{HeaderMap, Method, StatusCode, Uri};
+use hyper::header::{CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS};
+use hyper_staticfile::{resolve_path, ResponseBuilder};
 use serde::Serialize;
-use std::{borrow::Cow, convert::Infallible};
+use std::{
+    borrow::Cow,
+    convert::{Infallible, TryFrom},
+    future::Future,
+    io,
+    path::PathBuf,
+};
+use thiserror::Error;
 
 /// A type that can be converted into an http [Response].
 pub trait Reply: Sized + Send {
@@ -159,4 +165,108 @@ pub fn json<T: Serialize>(value: &T) -> Response {
 #[inline]
 pub fn jsonr<'a, T: IsoEncode<'a>>(value: &'a T) -> Response {
     json(&value.as_repr())
+}
+
+/// Handle a request by extracting a [Reply] from the request context.
+///
+/// This can be used to terminate a middleware chain if handling a request doesn't require
+/// any extra logic.
+///
+/// # Examples
+/// ```
+/// use hyperbole::{f, hlist, path, record, reply, App, Hlist};
+///
+/// let _app = App::empty()
+///     .context()
+///     .map(|_: Hlist![]| hlist!["this is my response"])
+///     .get(path!["i-want-my-str"], reply::extract::<&str>)
+///     .map(|_: Hlist![]| record![foo = "here is fresh foo"])
+///     .get(path!["unhand-me-a-foo"], reply::extract::<f![foo]>)
+///     .collapse();
+/// ```
+pub async fn extract<T: Reply>(cx: Hlist![T]) -> T {
+    cx.head
+}
+
+/// A filesystem error.
+#[derive(Debug, Error)]
+pub enum FsError {
+    /// An IO error.
+    #[error("io error: {}", .0)]
+    Io(#[from] io::Error),
+
+    /// An HTTP error.
+    #[error("http error: {}", .0)]
+    Http(#[from] http::Error),
+}
+
+impl Reply for FsError {
+    #[inline]
+    fn into_response(self) -> Response {
+        hyper::Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body("internal server error".into())
+            .unwrap()
+    }
+}
+
+/// Handle a request by serving a file from the filesystem. The file path to be served will be the
+/// request uri path appended to `base_path`.
+///
+/// # Examples
+/// ```
+/// use hyperbole::{path, reply, App};
+///
+/// let _app = App::empty()
+///     .not_found(reply::filesystem("/srv"))
+///     .context()
+///     .get(path!["a" / "whatever.jpg"], reply::filesystem("/srv"))
+///     .get(path!["b" / *extra: String], reply::filesystem("/opt"))
+///     .collapse();
+/// ```
+pub fn filesystem(base_path: &str) -> impl Fn(Hlist![Method, Uri, HeaderMap]) -> FsFuture {
+    let root = PathBuf::from(base_path);
+
+    move |cx| fs_inner(root.clone(), cx.head, Ok(cx.tail.head), cx.tail.tail.head)
+}
+
+/// Handle a request by serving a file from the filesystem. Unlike [filesystem], the file path to
+/// be served will be the named field `path: String` appended to `base_path`.
+///
+/// # Examples
+/// ```
+/// use hyperbole::{path, record, reply, App};
+///
+/// let _app = App::empty()
+///     .context()
+///     // use a path! parser to extract `path: String` from the uri
+///     .get(path!["css" / *path: String], reply::filesystem_path("/srv"))
+///     // or populate `path: String` in a middleware
+///     .map(|cx: record![]| record![path = "an-image-file.jpg".to_owned()])
+///     .get(path!["image"], reply::filesystem_path("/srv"))
+///     .collapse();
+/// ```
+pub fn filesystem_path(
+    base_path: &str,
+) -> impl Fn(Hlist![Method, f![path: String], HeaderMap]) -> FsFuture {
+    let root = PathBuf::from(base_path);
+
+    move |cx| {
+        let uri = Uri::try_from(cx.tail.head.into_inner()).map_err(|e| e.into());
+        fs_inner(root.clone(), cx.head, uri, cx.tail.tail.head)
+    }
+}
+
+/// The opaque future returned by [filesystem] and [filesystem_path].
+pub type FsFuture = impl Future<Output = Result<Response, FsError>>;
+
+type UriRes = http::Result<Uri>;
+
+async fn fs_inner(path: PathBuf, m: Method, u: UriRes, h: HeaderMap) -> Result<Response, FsError> {
+    let uri = u?;
+
+    ResponseBuilder::new()
+        .request_parts(&m, &uri, &h)
+        .build(resolve_path(path, uri.path()).await?)
+        .map_err(|e| e.into())
 }
