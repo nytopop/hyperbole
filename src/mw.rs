@@ -1,7 +1,7 @@
 //! Middleware combinators.
-use super::{reply::Reply, Response};
+use super::{field::Field, reply::Reply, Response};
 use frunk_core::Hlist;
-use headers::{Header, HeaderMapExt};
+use headers::{Cookie, Header, HeaderMapExt};
 use http::{header::HeaderName, HeaderMap, HeaderValue};
 use hyper::StatusCode;
 use thiserror::Error;
@@ -122,4 +122,89 @@ pub fn typed_header<H: Header>(cx: Hlist![HeaderMap]) -> Result<Hlist![H, Header
 pub fn typed_header_opt<H: Header>(cx: Hlist![HeaderMap]) -> Hlist![Option<H>, HeaderMap] {
     let h = cx.head.typed_get();
     cx.prepend(h)
+}
+
+/// An error encountered during cookie resolution.
+#[derive(Clone, Debug, Error)]
+pub enum CookieError {
+    /// The cookie header itself is missing.
+    #[error("missing Cookie header")]
+    MissingHeader,
+
+    /// The requested cookie is missing.
+    #[error("missing cookie {:?}", .0)]
+    MissingCookie(&'static str),
+}
+
+impl Reply for CookieError {
+    #[inline]
+    fn into_response(self) -> Response {
+        hyper::Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(format!("{}", self).into())
+            .unwrap()
+    }
+}
+
+/// Extract a cookie from the request context. The cookie name should be passed via const generic
+/// parameter.
+///
+/// The extracted cookie will be injected into the context as a named field.
+///
+/// Use with [`Ctx::try_map`][super::Ctx::try_map].
+///
+/// # Examples
+/// ```
+/// use hyperbole::{mw, record, App};
+///
+/// let _app = App::empty()
+///     .context()
+///     .try_map(mw::cookie::<"some_cookie">)
+///     .map(|cx: record![some_cookie: String]| {
+///         println!("cookie value is {:?}", cx.head);
+///         cx
+///     })
+///     .collapse();
+/// ```
+pub fn cookie<const NAME: &'static str>(
+    cx: Hlist![HeaderMap],
+) -> Result<Hlist![Field<String, NAME>, HeaderMap], CookieError> {
+    let cookie = (cx.head)
+        .typed_get::<Cookie>()
+        .ok_or(CookieError::MissingHeader)?;
+
+    match cookie.get(NAME).map(|v| v.to_owned()) {
+        Some(val) => Ok(cx.prepend(val.into())),
+        None => Err(CookieError::MissingCookie(NAME)),
+    }
+}
+
+/// Extract an optional cookie from the request context. The cookie name should be passed via const
+/// generic parameter.
+///
+/// The extracted cookie will be injected into the context as a named field.
+///
+/// Use with [`Ctx::map`][super::Ctx::map].
+///
+/// # Examples
+/// ```
+/// use hyperbole::{mw, record, App};
+///
+/// let _app = App::empty()
+///     .context()
+///     .map(mw::cookie_opt::<"some_cookie">)
+///     .map(|cx: record![some_cookie: Option<String>]| {
+///         println!("cookie value is {:?}", cx.head);
+///         cx
+///     })
+///     .collapse();
+/// ```
+pub fn cookie_opt<const NAME: &'static str>(
+    cx: Hlist![HeaderMap],
+) -> Hlist![Field<Option<String>, NAME>, HeaderMap] {
+    let cookie = (cx.head)
+        .typed_get::<Cookie>()
+        .and_then(|c| c.get(NAME).map(|v| v.to_owned()));
+
+    cx.prepend(cookie.into())
 }
