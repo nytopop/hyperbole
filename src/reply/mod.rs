@@ -53,16 +53,21 @@ pub trait Reply: Sized + Send {
     }
 }
 
-impl Reply for Infallible {
-    #[inline]
-    fn into_response(self) -> Response {
-        match self {}
-    }
-}
-
 impl Reply for Response {
     #[inline]
     fn into_response(self) -> Response {
+        self
+    }
+
+    #[inline]
+    fn with_status(mut self, code: StatusCode) -> Response {
+        *self.status_mut() = code;
+        self
+    }
+
+    #[inline]
+    fn with_header<H: Header>(mut self, header: H) -> Response {
+        self.headers_mut().typed_insert(header);
         self
     }
 }
@@ -74,12 +79,20 @@ impl<R: Reply, E: Reply> Reply for Result<R, E> {
     }
 }
 
-impl Reply for CNil {
-    #[inline]
-    fn into_response(self) -> Response {
-        match self {}
-    }
+macro_rules! uninhabited {
+    ($t: ty) => {
+        impl Reply for $t {
+            #[inline]
+            fn into_response(self) -> Response {
+                match self {}
+            }
+        }
+    };
 }
+
+uninhabited! { Infallible }
+
+uninhabited! { CNil }
 
 impl<H: Reply, Tail: Reply> Reply for Coproduct<H, Tail> {
     #[inline]
