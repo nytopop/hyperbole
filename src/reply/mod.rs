@@ -15,6 +15,8 @@ use std::{
 };
 use thiserror::Error;
 
+pub mod sse;
+
 /// A type that can be converted into an http [Response].
 pub trait Reply: Sized + Send {
     /// Perform the conversion.
