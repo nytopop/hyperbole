@@ -12,6 +12,7 @@ pub enum JsonBodyError {
     /// Error occurred while reading the request body.
     #[error("failed to read body: {}", .0)]
     Body(#[from] hyper::Error),
+
     /// Error occurred during deserialization.
     #[error("failed to parse body: {}", .0)]
     Json(#[from] serde_json::Error),
@@ -135,5 +136,138 @@ pub async fn jsonr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, JsonBodyError> {
 
     serde_json::from_reader(bodyr)
         .map_err(JsonBodyError::Json)
+        .map(T::from_repr)
+}
+
+/// An error encountered during form deserialization of a request body.
+#[derive(Debug, Error)]
+pub enum FormBodyError {
+    /// Error occurred while reading the request body.
+    #[error("failed to read body: {}", .0)]
+    Body(#[from] hyper::Error),
+
+    /// Error occurred during deserialization.
+    #[error("failed to parse body: {}", .0)]
+    Form(#[from] serde_urlencoded::de::Error),
+}
+
+impl Reply for FormBodyError {
+    #[inline]
+    fn into_response(self) -> Response {
+        hyper::Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(format!("{}", self).into())
+            .unwrap()
+    }
+}
+
+/// Deserialize a value from an `application/x-www-form-urlencoded` request body.
+///
+/// # Examples
+/// ```
+/// use hyperbole::{body::form, path, record_args, App};
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// struct ThingRequest {
+///     x: u32,
+///     y: String,
+/// }
+///
+/// #[record_args]
+/// async fn the_thing(_: ThingRequest) -> &'static str {
+///     "yepperz"
+/// }
+///
+/// let _app = App::empty()
+///     .context()
+///     // inline with get_with:
+///     .get_with(path!["the-thing"], form::<ThingRequest>, the_thing)
+///     // or as a middleware:
+///     .try_then(form::<ThingRequest>)
+///     .get(path!["the-thing" / "via-mw"], the_thing)
+///     .collapse();
+/// ```
+pub async fn form<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], FormBodyError> {
+    let bodyr = aggregate(cx.head).await?.reader();
+
+    serde_urlencoded::from_reader(bodyr)
+        .map_err(FormBodyError::Form)
+        .map(|t| hlist![t])
+}
+
+/// Deserialize an anonymous record from an `application/x-www-form-urlencoded` request body.
+///
+/// This can be used to specify a request body without declaring a bespoke request struct,
+/// while maintaining type safe access to the payload.
+///
+/// Any fields of the record will be merged into the context's state as if they were provided
+/// inline.
+///
+/// The serialization format of records is equivalent to a struct with the same fields:
+///
+/// ```
+/// use hyperbole::{field::IsoEncode, record};
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct MyRequest {
+///     a: String,
+///     b: u32,
+///     c: f32,
+/// }
+///
+/// let my_req = serde_urlencoded::to_string(&MyRequest {
+///     a: "hello-worldo".into(),
+///     b: 32324,
+///     c: 345345.34,
+/// })
+/// .unwrap();
+///
+/// let my_req_r = serde_urlencoded::to_string(
+///     &record! {
+///         a = "hello-worldo".to_string(),
+///         b = 32324,
+///         c = 345345.34,
+///     }
+///     .as_repr(),
+/// )
+/// .unwrap();
+///
+/// // both of the above serialize to:
+/// let repr = "a=hello-worldo&b=32324&c=345345.34";
+///
+/// assert_eq!(repr, my_req);
+/// assert_eq!(repr, my_req_r);
+/// ```
+///
+/// Use with [Ctx::handle_with] or [Ctx::try_then].
+///
+/// # Examples
+/// ```
+/// use hyperbole::{body::formr, path, record, record_args, App};
+///
+/// #[record_args]
+/// async fn the_thing(x: u32, y: String, z: f64) -> &'static str {
+///     "yepperz"
+/// }
+///
+/// let _app = App::empty()
+///     .context()
+///     // inline with get_with:
+///     .get_with(path!["the-thing"], formr::<record![x, y, z]>, the_thing)
+///     // or as a middleware:
+///     .try_then(formr::<record![x, y]>)
+///     .get(path!["the-thing" / z: f64], the_thing)
+///     .collapse();
+/// ```
+///
+/// [Ctx::handle_with]: super::Ctx::handle_with
+/// [Ctx::try_then]: super::Ctx::try_then
+pub async fn formr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, FormBodyError> {
+    let bodyr = aggregate(cx.head).await?.reader();
+
+    serde_urlencoded::from_reader(bodyr)
+        .map_err(FormBodyError::Form)
         .map(T::from_repr)
 }
