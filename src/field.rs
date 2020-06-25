@@ -444,6 +444,43 @@ pub struct RCons<T, Tail> {
 }
 
 /// Types with an alternate representation that is [Serialize].
+///
+/// For [record!]s, the serialization format is equivalent to a struct with the same fields:
+///
+/// ```
+/// use hyperbole::{field::IsoEncode, record};
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct MyRequest {
+///     a: String,
+///     b: u32,
+///     c: f32,
+/// }
+///
+/// let my_req = serde_json::to_string(&MyRequest {
+///     a: "hello-worldo".into(),
+///     b: 32324,
+///     c: 345345.34,
+/// })
+/// .unwrap();
+///
+/// let my_req_r = serde_json::to_string(
+///     &record! {
+///         a = "hello-worldo".to_string(),
+///         b = 32324,
+///         c = 345345.34,
+///     }
+///     .as_repr(),
+/// )
+/// .unwrap();
+///
+/// // both of the above serialize to:
+/// let repr = r#"{"a":"hello-worldo","b":32324,"c":345345.34}"#;
+///
+/// assert_eq!(repr, my_req);
+/// assert_eq!(repr, my_req_r);
+/// ```
 pub trait IsoEncode<'a> {
     /// The representation.
     type Repr: Serialize;
@@ -474,6 +511,32 @@ impl<'a, T: Serialize + 'a, Tail: IsoEncode<'a>> IsoEncode<'a> for HCons<T, Tail
 }
 
 /// Types with an alternate representation that is [DeserializeOwned].
+///
+/// For [record!]s, the deserialization format is equivalent to a struct with the same fields:
+///
+/// ```
+/// use hyperbole::{access, field::IsoDecode, record};
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// struct MyRequest {
+///     a: String,
+///     b: u32,
+///     c: f32,
+/// }
+///
+/// let repr = r#"{"a":"hello-worldo","b":32324,"c":345345.34}"#;
+///
+/// let my_req: MyRequest = serde_json::from_str(repr).unwrap();
+///
+/// let my_req_r: record![a: String, b: u32, c: f32] = serde_json::from_str(repr)
+///     .map(IsoDecode::from_repr)
+///     .unwrap();
+///
+/// assert_eq!(my_req.a, *access![&my_req_r.a]);
+/// assert_eq!(my_req.b, *access![&my_req_r.b]);
+/// assert_eq!(my_req.c, *access![&my_req_r.c]);
+/// ```
 pub trait IsoDecode {
     /// The representation.
     type Repr: DeserializeOwned;
