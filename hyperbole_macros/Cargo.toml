@@ -7,7 +7,6 @@ license = "MIT OR Apache-2.0"
 description = "Procedural macros for hyperbole."
 homepage = "https://github.com/nytopop/hyperbole"
 repository = "https://github.com/nytopop/hyperbole"
-readme = "README.md"
 documentation = "https://docs.rs/hyperbole_macros"
 keywords = ["web", "http", "hyper", "async", "framework"]
 categories = ["web-programming", "asynchronous"]
