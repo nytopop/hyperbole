@@ -18,5 +18,5 @@ categories = ["web-programming", "asynchronous"]
 proc-macro = true
 
 [dependencies]
-syn = "1.0"
-quote = "1.0"
+syn = { version = "1.0.33", features = ["full"] }
+quote = "1.0.7"
