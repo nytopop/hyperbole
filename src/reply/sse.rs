@@ -215,7 +215,7 @@ impl Event {
         for line in self.payload.split('\n') {
             buf.extend_from_slice(tag.as_bytes());
             buf.extend_from_slice(line.as_bytes());
-            buf.extend_from_slice("\n".as_bytes());
+            buf.extend_from_slice(b"\n");
         }
     }
 }
