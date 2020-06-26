@@ -7,7 +7,7 @@ use frunk_core::{
     coproduct::{CNil, CoprodUninjector, Coproduct},
     hlist::{HCons, HNil, Plucker, Sculptor},
 };
-use futures::future::{FutureExt, TryFutureExt};
+use futures::future::{ready, FutureExt, Ready, TryFutureExt};
 use std::{future::Future, marker::PhantomData, ops::Add, sync::Arc};
 
 #[cfg(doc)]
@@ -123,15 +123,11 @@ impl<Req: Send, P: Send> Link<Req, P> for Base {
 
     type Error = CNil;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = Ready<Result<(Self::Output, Self::Params), Self::Error>>;
 
+    #[inline]
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
-        let fut = async { Ok((req, p)) };
-
-        doc_hack! { Box::pin(fut), fut }
+        ready(Ok((req, p)))
     }
 }
 
@@ -170,7 +166,7 @@ where
             .handle_link(req, p)
             .map_ok(move |(tail, p)| (HCons { head, tail }, p));
 
-        doc_hack! { Box::pin(fut) , fut }
+        doc_hack! { fut.boxed(), fut }
     }
 }
 
@@ -212,7 +208,7 @@ where
             (rest + merge, p)
         });
 
-        doc_hack! { Box::pin(fut) , fut }
+        doc_hack! { fut.boxed(), fut }
     }
 }
 
@@ -256,7 +252,7 @@ where
             Ok((rest + merge, p))
         });
 
-        doc_hack! { Box::pin(fut) , fut }
+        doc_hack! { fut.boxed(), fut }
     }
 }
 
@@ -300,7 +296,7 @@ where
             Ok((rest + merge, p))
         });
 
-        doc_hack! { Box::pin(fut) , fut }
+        doc_hack! { fut.boxed(), fut }
     }
 }
 
@@ -346,7 +342,7 @@ where
             Ok((rest + merge, p))
         });
 
-        doc_hack! { Box::pin(fut) , fut }
+        doc_hack! { fut.boxed(), fut }
     }
 }
 
@@ -380,7 +376,7 @@ where
 
         let fut = self.prev.handle_link(req, p).map_err(move |e| next(e));
 
-        doc_hack! { Box::pin(fut) , fut }
+        doc_hack! { fut.boxed(), fut }
     }
 }
 
@@ -420,7 +416,7 @@ where
             Err(no) => Coproduct::Inr(no),
         });
 
-        doc_hack! { Box::pin(fut) , fut }
+        doc_hack! { fut.boxed(), fut }
     }
 }
 
@@ -482,7 +478,7 @@ where
             Err(e) => Err(e.appendl()),
         });
 
-        doc_hack! { Box::pin(fut) , fut }
+        doc_hack! { fut.boxed(), fut }
     }
 }
 
@@ -524,6 +520,6 @@ where
             Ok((reply.into_response(), HNil))
         });
 
-        doc_hack! { Box::pin(fut) , fut }
+        doc_hack! { fut.boxed(), fut }
     }
 }
