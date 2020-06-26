@@ -134,7 +134,7 @@ pub enum FormBodyError {
 
 bad_request_display! { FormBodyError }
 
-/// Deserialize a value from an `application/x-www-form-urlencoded` request body.
+/// Deserialize a value from an `x-www-form-urlencoded` request body.
 ///
 /// Use with [Ctx::handle_with] or [Ctx::try_then].
 ///
@@ -174,7 +174,7 @@ pub async fn form<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Fo
         .map(|t| hlist![t])
 }
 
-/// Deserialize an anonymous record from an `application/x-www-form-urlencoded` request body.
+/// Deserialize an anonymous record from an `x-www-form-urlencoded` request body.
 ///
 /// This can be used to specify a request body without declaring a bespoke request struct,
 /// while maintaining type safe access to the payload.
@@ -298,6 +298,12 @@ where T: DeserializeOwned {
 
 /// Deserialize an anonymous record from the request body, using the `Content-Type` header to
 /// determine the serialization format.
+///
+/// This can be used to specify a request body without declaring a bespoke request struct,
+/// while maintaining type safe access to the payload.
+///
+/// Any fields of the record will be merged into the context's state as if they were provided
+/// inline.
 ///
 /// Use with [Ctx::handle_with] or [Ctx::try_then].
 ///
