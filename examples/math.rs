@@ -14,7 +14,7 @@ async fn div(cx: record![a: f64, b: f64]) -> String {
 
 #[tokio::main]
 async fn main() -> hyper::Result<()> {
-    let app = App::empty()
+    let app = App::new()
         .context_path(path![a: f64 / b: f64])
         .get(path!["add"], |cx: record![a, b]| async move {
             let (a, b) = cx.into();

@@ -3,7 +3,7 @@ use hyperbole::*;
 
 #[test]
 fn test_modify_uri_parser_after_erasure() {
-    let _ = App::empty()
+    let _ = App::new()
         .context()
         .map(|_: Hlist![Body]| record![])
         .map(|_: record![]| record![foo = 40u64])
@@ -11,14 +11,15 @@ fn test_modify_uri_parser_after_erasure() {
         .map(|_: record![bar, foo]| record![])
         .collapse();
 
-    let _ = App::new(record![x = 40])
+    let _ = App::new()
         .context()
+        .inject(f![x = 40])
         .map(|_: record![x]| record![])
         .path(path![y: u32])
         .map(|_: record![y]| record![])
         .collapse();
 
-    let _ = App::empty()
+    let _ = App::new()
         .context()
         .map(|_: record![]| record![x = 40])
         .map(|cx: record![x]| cx)
@@ -34,7 +35,7 @@ async fn test_basic_uri_parsing() {
         format!("x: {}, y: {}", x, y)
     }
 
-    let app = App::empty()
+    let app = App::new()
         .context_path(path![x: u32 / y: f64])
         .get(path![], handle)
         .collapse()
@@ -65,7 +66,7 @@ async fn test_route_dispatch_with_ctx_val() {
         format!("{}", *cx.head)
     }
 
-    let app = App::empty()
+    let app = App::new()
         .context()
         .map(|_: record![]| record![val = 0])
         .get(path!["a"], handle)

@@ -58,7 +58,7 @@ impl<S: Stream<Item = Vec<Event>>> EventStream<S> {
     ///     App, Hlist,
     /// };
     ///
-    /// let _app = App::empty()
+    /// let _app = App::new()
     ///     .context()
     ///     .get(path!["my-first-event-stream"], |cx: Hlist![]| async {
     ///         let events = stream::iter(Some(vec![
@@ -92,7 +92,7 @@ impl<S: Stream<Item = Vec<Event>>> EventStream<Padded<S>> {
     /// };
     /// use std::time::Duration;
     ///
-    /// let _app = App::empty()
+    /// let _app = App::new()
     ///     .context()
     ///     .get(path!["my-first-event-stream"], |cx: Hlist![]| async {
     ///         let events = stream::iter(Some(vec![

@@ -191,7 +191,7 @@ pub fn jsonr<'a, T: IsoEncode<'a>>(value: &'a T) -> Response {
 /// ```
 /// use hyperbole::{f, hlist, path, record, reply, App, Hlist};
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     .map(|_: Hlist![]| hlist!["this is my response"])
 ///     .get(path!["i-want-my-str"], reply::extract::<&str>)
@@ -232,7 +232,7 @@ impl Reply for FsError {
 /// ```
 /// use hyperbole::{path, reply, App};
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .not_found(reply::filesystem("/srv"))
 ///     .context()
 ///     .get(path!["a" / "whatever.jpg"], reply::filesystem("/srv"))
@@ -252,7 +252,7 @@ pub fn filesystem(base_path: &str) -> impl Fn(Hlist![Method, Uri, HeaderMap]) ->
 /// ```
 /// use hyperbole::{path, record, reply, App};
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     // use a path! parser to extract `path: String` from the uri
 ///     .get(path!["css" / *path: String], reply::filesystem_path("/srv"))

@@ -71,7 +71,7 @@ pub mod test;
 pub mod tree;
 
 use combinators::{
-    Add2, Base, End, Inject, Link, Map, MapErr, MapErrs, Path, Then, TryMap, TryThen,
+    Add2, Base, End, Inject, InjectAll, Link, Map, MapErr, MapErrs, Path, Then, TryMap, TryThen,
 };
 use handler::{Chain, Handler, NotFound};
 use reply::Reply;
@@ -103,10 +103,10 @@ pub type Response = hyper::Response<Body>;
 
 #[doc(hidden)]
 #[derive(Clone)]
-pub struct AppDispatch<I>(Arc<App<I>>);
+pub struct AppDispatch(Arc<App>);
 
-impl<I> Service<&AddrStream> for AppDispatch<I> {
-    type Response = AppService<I>;
+impl Service<&AddrStream> for AppDispatch {
+    type Response = AppService;
 
     type Error = Infallible;
 
@@ -128,20 +128,20 @@ impl<I> Service<&AddrStream> for AppDispatch<I> {
 
 #[doc(hidden)]
 #[derive(Clone)]
-pub struct AppService<I> {
-    app: Arc<App<I>>,
+pub struct AppService {
+    app: Arc<App>,
     addr: SocketAddr,
 }
 
-impl<I> Deref for AppService<I> {
-    type Target = App<I>;
+impl Deref for AppService {
+    type Target = App;
 
     fn deref(&self) -> &Self::Target {
         &self.app
     }
 }
 
-impl<I: Sync + Send + Clone + 'static> Service<Request<Body>> for AppService<I> {
+impl Service<Request<Body>> for AppService {
     type Response = Response;
 
     type Error = Infallible;
@@ -158,9 +158,7 @@ impl<I: Sync + Send + Clone + 'static> Service<Request<Body>> for AppService<I> 
 }
 
 /// The set of request scoped state that contexts are initialized with.
-///
-/// The `I` type variable refers to the top-level state (if any) passed into [`App::new`].
-pub type Init<I> = Hlist![
+pub type Init = Hlist![
     Body,
     Method,
     Uri,
@@ -168,11 +166,9 @@ pub type Init<I> = Hlist![
     HeaderMap<HeaderValue>,
     Extensions,
     SocketAddr,
-    ...I
 ];
 
-/// Contains routes and handlers for a given http service, as well as top-level application
-/// state.
+/// Contains routes and handlers for a given http application.
 ///
 /// # Examples
 /// ```no_run
@@ -181,7 +177,7 @@ pub type Init<I> = Hlist![
 ///
 /// #[tokio::main]
 /// async fn main() -> hyper::Result<()> {
-///     let app = App::empty()
+///     let app = App::new()
 ///         .context_path(path!["first" / param: u32])
 ///         .map(|cx: record![param]| cx)
 ///         // GET /first/:param/echo
@@ -196,9 +192,7 @@ pub type Init<I> = Hlist![
 ///         .await
 /// }
 /// ```
-pub struct App<I> {
-    // top-level injected state
-    state: I,
+pub struct App {
     // routes for common methods
     common: [Node<dyn Handler>; 9],
     // routes for custom methods
@@ -207,30 +201,17 @@ pub struct App<I> {
     not_found: Box<dyn Handler>,
 }
 
-impl App<HNil> {
-    /// Returns a new [App] without any top-level state.
-    pub fn empty() -> Self {
-        Self::new(HNil)
-    }
-}
-
-impl<I: Sync + Send + Clone + 'static> App<I> {
-    /// Returns a new [App] with the provided top-level state.
-    ///
-    /// The `state` passed here should be an hlist as constructed by [hlist!] or [record!],
-    /// and will be cloned for each incoming request.
+impl App {
+    /// Returns a new [App] with no handlers.
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{access, hlist, record, App, Hlist};
+    /// use hyperbole::{access, f, record, App, Hlist};
     ///
-    /// // equivalent to App::empty()
-    /// let _app = App::new(hlist![]);
-    /// let _app = App::new(record![]);
-    ///
-    /// // &'static str will be available in contexts
-    /// let _app = App::new(hlist!["hello world"])
+    /// let _app = App::new()
     ///     .context()
+    ///     // &'static str will be available in this context
+    ///     .inject("hello world")
     ///     .map(|cx: Hlist![&str]| {
     ///         println!("str is {:?}", cx.get::<&str, _>());
     ///         cx
@@ -238,19 +219,18 @@ impl<I: Sync + Send + Clone + 'static> App<I> {
     ///     .map(|cx: Hlist![&'static str]| cx)
     ///     .collapse();
     ///
-    /// // 'x: {integer}' will be available in contexts
-    /// let _app = App::new(record![x = 40])
+    /// let _app = App::new()
     ///     .context()
+    ///     // 'x: {integer}' will be available in this context
+    ///     .inject(f![x = 40])
     ///     .map(|cx: record![x: u64]| {
     ///         println!("x is {}", access!(&cx.x));
     ///         cx
     ///     })
     ///     .collapse();
     /// ```
-    pub fn new(state: I) -> Self
-    where I: HList {
+    pub fn new() -> Self {
         Self {
-            state,
             common: Default::default(),
             custom: HashMap::new(),
             not_found: Box::new(NotFound),
@@ -266,7 +246,7 @@ impl<I: Sync + Send + Clone + 'static> App<I> {
     /// ```
     /// use hyperbole::{path, App};
     ///
-    /// let _app = App::empty()
+    /// let _app = App::new()
     ///     // begin at /
     ///     .context_path(path![])
     ///     .collapse()
@@ -280,16 +260,16 @@ impl<I: Sync + Send + Clone + 'static> App<I> {
     pub fn context_path<P: Parser<Segment>>(
         self,
         spec: PathSpec<P>,
-    ) -> Ctx<I, Params<P>, Path<Base, P, Here>>
+    ) -> Ctx<Params<P>, Path<Base, P, Here>>
     {
         let spec = PathSpec::ROOT.append(spec);
-        let chain = Chain::new(self.state.clone(), spec).link_next(Path::new);
+        let chain = Chain::new(spec).link_next(Path::new);
 
         Ctx { app: self, chain }
     }
 
     /// Begin a new request context at the root path.
-    pub fn context(self) -> Ctx<I, Params<HNil>, Path<Base, HNil, Here>> {
+    pub fn context(self) -> Ctx<Params<HNil>, Path<Base, HNil, Here>> {
         self.context_path(PathSpec::ROOT)
     }
 
@@ -311,17 +291,17 @@ impl<I: Sync + Send + Clone + 'static> App<I> {
     ///     "not found".with_status(StatusCode::NOT_FOUND)
     /// }
     ///
-    /// let _app = App::empty().not_found(handler);
+    /// let _app = App::new().not_found(handler);
     /// ```
     pub fn not_found<F, Args, Ix, Fut, Resp>(mut self, handler: F) -> Self
     where
         F: Fn(Args) -> Fut + Sync + Send + 'static,
         Fut: Future<Output = Resp> + Send + 'static,
         Resp: Reply + 'static,
-        End<Base, F, Args, Ix>: Link<Init<I>, HNil, Output = Response, Params = HNil> + 'static,
+        End<Base, F, Args, Ix>: Link<Init, HNil, Output = Response, Params = HNil> + 'static,
     {
-        let chain: Chain<I, HNil, End<Base, F, Args, Ix>> =
-            Chain::new(self.state.clone(), path![]).link_next(|link| End::new(link, handler));
+        let chain: Chain<HNil, End<Base, F, Args, Ix>> =
+            Chain::new(path![]).link_next(|link| End::new(link, handler));
 
         self.not_found = Box::new(chain);
         self
@@ -330,7 +310,7 @@ impl<I: Sync + Send + Clone + 'static> App<I> {
     /// Consume this [App], turning it into a `MakeService` compatible with hyper servers.
     ///
     /// See [`hyper::server::Builder::serve`] for usage details.
-    pub fn into_make_service(self) -> AppDispatch<I> {
+    pub fn into_make_service(self) -> AppDispatch {
         AppDispatch(Arc::new(self))
     }
 
@@ -390,7 +370,7 @@ impl<I: Sync + Send + Clone + 'static> App<I> {
 
     /// Create a test client for this app.
     #[inline]
-    pub fn test_client(self) -> test::Client<I> {
+    pub fn test_client(self) -> test::Client {
         test::Client { app: self }
     }
 }
@@ -420,10 +400,9 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// the time requests are being processed). It exists only to construct request handlers for
 /// registration as routes in an [App].
 ///
-/// Each context tracks three hlists and a combinator chain that transforms them:
+/// Each context tracks two hlists and a combinator chain that transforms them:
 ///
-/// 1. An hlist provided at [App] initialization time (via [`App::new`] or [`App::empty`]).
-/// 2. An hlist generated from incoming http request parts.
+/// 1. An hlist generated from incoming http request parts.
 /// 2. An hlist of parameters parsed from request uris.
 ///
 /// See [Init] for the exact set of initial state available in fresh contexts.
@@ -446,8 +425,9 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// struct A;
 /// struct B;
 ///
-/// let _ctx = App::new(hlist![DbHandle]) // top-level state can be injected here
+/// let _ctx = App::new()
 ///     .context()
+///     .inject(DbHandle)
 ///     // move nothing, and return nothing to be merged
 ///     .map(|cx: Hlist![]| cx)
 ///     // move req body, but merge it back
@@ -470,7 +450,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// use hyper::Body;
 /// use hyperbole::{access, path, record, record_args, App, Hlist};
 ///
-/// let _ctx = App::empty()
+/// let _ctx = App::new()
 ///     .context_path(path![dynamic: u32])
 ///     // GET /:dynamic/echo_req
 ///     .get(path!["echo_req"], |cx: Hlist![Body]| async move {
@@ -520,7 +500,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     App, Coprod,
 /// };
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     // attempt to parse the body as a json object:
 ///     .try_then(jsonr::<record![x: u32, y: String]>)
@@ -548,7 +528,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///
 /// struct A(u32);
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     // merge an A
 ///     .map(|cx: Hlist![]| hlist![A(1)])
@@ -573,7 +553,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///
 /// struct A(u32);
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     .map(|cx: record![]| record![first = A(1)])
 ///     .map(|cx: record![]| record![second = A(2)])
@@ -594,9 +574,9 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// [try_then]: Ctx::try_then
 /// [map_errs]: Ctx::map_errs
 /// [map_err]: Ctx::map_err
-pub struct Ctx<I, P, L> {
-    app: App<I>,
-    chain: Chain<I, P, L>,
+pub struct Ctx<P, L> {
+    app: App,
+    chain: Chain<P, L>,
 }
 
 macro_rules! handle {
@@ -618,7 +598,7 @@ macro_rules! handle {
             F: Fn(Args) -> Fut + Sync + Send,
             Fut: Future<Output = Resp> + Send,
             Resp: Reply ,
-            (): CtxState2<L, I, P, _P, Pix, F, Args, Ix>,
+            (): CtxState2<L, P, _P, Pix, F, Args, Ix>,
         {
             self.handle($method, spec, handler)
         }
@@ -654,19 +634,15 @@ macro_rules! handle_with {
             Fut: Future<Output = Resp> + Send,
             Resp: Reply,
 
-            (): CtxState3<L, I, P, _P, Pix, W, WArgs, Wix, F, Args, Ix>,
+            (): CtxState3<L, P, _P, Pix, W, WArgs, Wix, F, Args, Ix>,
         {
             self.handle_with($method, spec, with, handler)
         }
     };
 }
 
-impl<I: 'static, P: 'static, L: 'static> Ctx<I, P, L>
-where
-    I: Sync + Send + Clone,
-    L: Sync + Send + Clone,
-{
-    fn link_next<Ln, F: FnOnce(L) -> Ln>(self, wrap: F) -> Ctx<I, P, Ln> {
+impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
+    fn link_next<Ln, F: FnOnce(L) -> Ln>(self, wrap: F) -> Ctx<P, Ln> {
         Ctx {
             app: self.app,
             chain: self.chain.link_next(wrap),
@@ -679,16 +655,34 @@ where
     /// ```
     /// use hyperbole::{f, hlist, record, App, Hlist};
     ///
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context()
     ///     .inject("just an &str")
     ///     .map(|cx: Hlist![&str]| hlist![])
     ///     .inject(f![xyz = "this is a named field"])
     ///     .map(|cx: record![xyz]| hlist![]);
     /// ```
-    pub fn inject<T: Clone>(self, value: T) -> Ctx<I, P, Inject<L, T>>
-    where Inject<L, T>: Link<Init<I>, P> {
+    pub fn inject<T: Clone>(self, value: T) -> Ctx<P, Inject<L, T>>
+    where Inject<L, T>: Link<Init, P> {
         self.link_next(|link| Inject::new(link, value))
+    }
+
+    /// Inject an hlist of cloneable values into the request scoped state.
+    ///
+    /// # Examples
+    /// ```
+    /// use hyperbole::{record, App};
+    ///
+    /// let _ctx = App::new()
+    ///     .context()
+    ///     .inject_all(record![a = "asdf", b = 42])
+    ///     .map(|cx: record![b, a]| cx)
+    ///     .inject_all(record![c = ()])
+    ///     .map(|cx: record![a, b, c]| cx);
+    /// ```
+    pub fn inject_all<T: Clone>(self, values: T) -> Ctx<P, InjectAll<L, T>>
+    where InjectAll<L, T>: Link<Init, P> {
+        self.link_next(|link| InjectAll::new(link, values))
     }
 
     /// Transform a subset of the request scoped state with a closure.
@@ -712,17 +706,17 @@ where
     ///     hlist![]
     /// }
     ///
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context()
     ///     .map(|cx: Hlist![Body]| cx)
     ///     .map(|cx: Hlist![]| hlist![12345])
     ///     .map(fun);
     /// ```
-    pub fn map<F, Args, Ix, Merge>(self, f: F) -> Ctx<I, P, Map<L, F, Args, Ix>>
+    pub fn map<F, Args, Ix, Merge>(self, f: F) -> Ctx<P, Map<L, F, Args, Ix>>
     where
         F: Fn(Args) -> Merge,
         Merge: HList,
-        Map<L, F, Args, Ix>: Link<Init<I>, P>,
+        Map<L, F, Args, Ix>: Link<Init, P>,
     {
         self.link_next(|link| Map::new(link, f))
     }
@@ -750,7 +744,7 @@ where
     /// ```
     /// use hyperbole::{access, path, record, App};
     ///
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context_path(path![a: u32 / b: u32])
     ///     .try_map(|cx: record![a, b]| match access!(&cx.a) > access!(&cx.b) {
     ///         false => Err("uh oh"),
@@ -758,12 +752,12 @@ where
     ///     })
     ///     .map_err(|e: &str| "e is the above error, if it happened");
     /// ```
-    pub fn try_map<F, Args, Ix, Merge, E>(self, f: F) -> Ctx<I, P, TryMap<L, F, Args, Ix>>
+    pub fn try_map<F, Args, Ix, Merge, E>(self, f: F) -> Ctx<P, TryMap<L, F, Args, Ix>>
     where
         F: Fn(Args) -> Result<Merge, E>,
         Merge: HList,
         E: Reply,
-        TryMap<L, F, Args, Ix>: Link<Init<I>, P>,
+        TryMap<L, F, Args, Ix>: Link<Init, P>,
     {
         self.link_next(|link| TryMap::new(link, f))
     }
@@ -791,18 +785,18 @@ where
     ///     hlist![]
     /// }
     ///
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context()
     ///     .then(|cx: Hlist![Body]| async move { cx })
     ///     .then(|cx: Hlist![]| async move { cx })
     ///     .then(fun);
     /// ```
-    pub fn then<F, Args, Ix, Fut, Merge>(self, f: F) -> Ctx<I, P, Then<L, F, Args, Ix>>
+    pub fn then<F, Args, Ix, Fut, Merge>(self, f: F) -> Ctx<P, Then<L, F, Args, Ix>>
     where
         F: Fn(Args) -> Fut,
         Fut: Future<Output = Merge>,
         Merge: HList,
-        Then<L, F, Args, Ix>: Link<Init<I>, P>,
+        Then<L, F, Args, Ix>: Link<Init, P>,
     {
         self.link_next(|link| Then::new(link, f))
     }
@@ -831,7 +825,7 @@ where
     /// ```
     /// use hyperbole::{path, record, App};
     ///
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context_path(path![a: f64 / b: String])
     ///     .try_then(|cx: record![a, b]| async move {
     ///         let (a, b) = cx.into();
@@ -843,13 +837,13 @@ where
     ///     })
     ///     .map(|cx: record![color]| cx);
     /// ```
-    pub fn try_then<F, Args, Ix, Fut, Merge, E>(self, f: F) -> Ctx<I, P, TryThen<L, F, Args, Ix>>
+    pub fn try_then<F, Args, Ix, Fut, Merge, E>(self, f: F) -> Ctx<P, TryThen<L, F, Args, Ix>>
     where
         F: Fn(Args) -> Fut,
         Fut: Future<Output = Result<Merge, E>>,
         Merge: HList,
         E: Reply,
-        TryThen<L, F, Args, Ix>: Link<Init<I>, P>,
+        TryThen<L, F, Args, Ix>: Link<Init, P>,
     {
         self.link_next(|link| TryThen::new(link, f))
     }
@@ -865,19 +859,19 @@ where
     /// ```
     /// use hyperbole::{record, App, Coprod};
     ///
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context()
     ///     // without any fallible combinators, the error is an uninhabitable enum:
     ///     .map_errs(|err: Coprod![]| -> Coprod![] { match err {} })
     ///     .map(|cx: record![]| cx)
     ///     .collapse();
     /// ```
-    pub fn map_errs<F, E>(self, f: F) -> Ctx<I, P, MapErrs<L, F>>
+    pub fn map_errs<F, E>(self, f: F) -> Ctx<P, MapErrs<L, F>>
     where
-        F: Fn(<L as Link<Init<I>, P>>::Error) -> E,
+        F: Fn(<L as Link<Init, P>>::Error) -> E,
         E: IsCoproduct + Reply,
-        L: Link<Init<I>, P>,
-        MapErrs<L, F>: Link<Init<I>, P>,
+        L: Link<Init, P>,
+        MapErrs<L, F>: Link<Init, P>,
     {
         self.link_next(|link| MapErrs::new(link, f))
     }
@@ -901,7 +895,7 @@ where
     ///     Err(b"uh oh".to_vec())
     /// }
     ///
-    /// let _app = App::empty()
+    /// let _app = App::new()
     ///     .context()
     ///     .try_map(fallible_a)
     ///     .try_map(fallible_b)
@@ -909,11 +903,11 @@ where
     ///     .map_err(|e: Vec<u8>| "it was Vec<u8>")
     ///     .collapse();
     /// ```
-    pub fn map_err<F, E, Ix, R>(self, f: F) -> Ctx<I, P, MapErr<L, F, E, Ix>>
+    pub fn map_err<F, E, Ix, R>(self, f: F) -> Ctx<P, MapErr<L, F, E, Ix>>
     where
         F: Fn(E) -> R,
         R: Reply,
-        MapErr<L, F, E, Ix>: Link<Init<I>, P>,
+        MapErr<L, F, E, Ix>: Link<Init, P>,
     {
         self.link_next(|link| MapErr::new(link, f))
     }
@@ -932,7 +926,7 @@ where
     /// use hyperbole::{path, record, tree::UriError, App};
     /// use std::num::ParseFloatError;
     ///
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context()
     ///     .path(path!["first" / x: usize / y: f64])
     ///     .map(|cx: record![x]| cx)
@@ -942,11 +936,11 @@ where
     ///     // GET /first/:x/:y/abc
     ///     .get(path!["abc"], |cx: record![x, y]| async { "" });
     /// ```
-    pub fn path<_P, Ix>(self, spec: PathSpec<_P>) -> Ctx<I, Add2<P, Params<_P>>, Path<L, _P, Ix>>
+    pub fn path<_P, Ix>(self, spec: PathSpec<_P>) -> Ctx<Add2<P, Params<_P>>, Path<L, _P, Ix>>
     where
         P: Add<Params<_P>>,
         _P: Parser<Segment>,
-        Path<L, _P, Ix>: Link<Init<I>, Add2<P, Params<_P>>>,
+        Path<L, _P, Ix>: Link<Init, Add2<P, Params<_P>>>,
     {
         Ctx {
             app: self.app,
@@ -985,7 +979,7 @@ where
     ///     vec![1, 2, 3, 4, 5]
     /// }
     ///
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context_path(path!["foo" / "bar" / baz: f64])
     ///     .get(path!["doit"], doit)
     ///     .map(|cx: record![baz]| hlist![15])
@@ -1003,7 +997,7 @@ where
     /// use hyperbole::{path, record, App};
     ///
     /// // 'a handler is already registered for path "/conflict"'
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context()
     ///     .get(path!["conflict"], |_: record![]| async { "" })
     ///     .get(path!["conflict"], |_: record![]| async { "" });
@@ -1013,7 +1007,7 @@ where
     /// use hyperbole::{path, record, App};
     ///
     /// // 'wildcard ":param" conflicts with existing children in path "/:param"'
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context()
     ///     .get(path!["something"], |_: record![]| async { "" })
     ///     .get(path![param: u32], |_: record![]| async { "" });
@@ -1028,7 +1022,7 @@ where
         F: Fn(Args) -> Fut + Sync + Send,
         Fut: Future<Output = Resp> + Send,
         Resp: Reply,
-        (): CtxState2<L, I, P, _P, Pix, F, Args, Ix>,
+        (): CtxState2<L, P, _P, Pix, F, Args, Ix>,
     {
         let chain = (self.chain.clone())
             .add_path(spec)
@@ -1068,7 +1062,7 @@ where
     ///     "neat"
     /// }
     ///
-    /// let _app = App::empty()
+    /// let _app = App::new()
     ///     .context()
     ///     .get_with(path![a: u32], jsonr::<record![b, c]>, handle_abc)
     ///     .collapse();
@@ -1087,7 +1081,7 @@ where
     /// }
     ///
     /// // 'a handler is already registered for path "/conflict"'
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context()
     ///     .get_with(path!["conflict"], noop, |_: record![]| async { "" })
     ///     .get_with(path!["conflict"], noop, |_: record![]| async { "" });
@@ -1102,7 +1096,7 @@ where
     /// }
     ///
     /// // 'wildcard ":param" conflicts with existing children in path "/:param"'
-    /// let _ctx = App::empty()
+    /// let _ctx = App::new()
     ///     .context()
     ///     .get_with(path!["something"], noop, |_: record![]| async { "" })
     ///     .get_with(path![param: u32], noop, |_: record![]| async { "" });
@@ -1126,7 +1120,7 @@ where
         Fut: Future<Output = Resp> + Send,
         Resp: Reply,
 
-        (): CtxState3<L, I, P, _P, Pix, W, WArgs, Wix, F, Args, Ix>,
+        (): CtxState3<L, P, _P, Pix, W, WArgs, Wix, F, Args, Ix>,
     {
         let chain = (self.chain.clone())
             .add_path(spec)
@@ -1157,26 +1151,26 @@ where
     /// [handle]: Ctx::handle
     /// [get]: Ctx::get
     /// [post]: Ctx::post
-    pub fn collapse(self) -> App<I> {
+    pub fn collapse(self) -> App {
         self.app
     }
 }
 
 #[doc(hidden)]
-pub trait CtxState2<L, I, P, _P, Pix, F, Args, Ix> = where
+pub trait CtxState2<L, P, _P, Pix, F, Args, Ix> = where
     P: Add<Params<_P>>,
     _P: Parser<Segment>,
     Add2<P, Params<_P>>: Parser<Cluster>,
     End<Path<L, _P, Pix>, F, Args, Ix>:
-        Link<Init<I>, Add2<P, Params<_P>>, Output = Response, Params = HNil> + 'static;
+        Link<Init, Add2<P, Params<_P>>, Output = Response, Params = HNil> + 'static;
 
 #[doc(hidden)]
-pub trait CtxState3<L, I, P, _P, Pix, W, WArgs, Wix, F, Args, Ix> = where
+pub trait CtxState3<L, P, _P, Pix, W, WArgs, Wix, F, Args, Ix> = where
     P: Add<Params<_P>>,
     _P: Parser<Segment>,
     Add2<P, Params<_P>>: Parser<Cluster>,
     End<TryThen<Path<L, _P, Pix>, W, WArgs, Wix>, F, Args, Ix>:
-        Link<Init<I>, Add2<P, Params<_P>>, Output = Response, Params = HNil> + 'static;
+        Link<Init, Add2<P, Params<_P>>, Output = Response, Params = HNil> + 'static;
 
 mod sealed {
     pub trait Seal {}

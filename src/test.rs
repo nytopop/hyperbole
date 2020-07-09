@@ -20,13 +20,13 @@ fn request(m: Method, path: &str) -> Request<Body> {
 }
 
 /// A test client.
-pub struct Client<I> {
-    pub(super) app: App<I>,
+pub struct Client {
+    pub(super) app: App,
 }
 
-impl<I: Sync + Send + Clone + 'static> Client<I> {
+impl Client {
     /// Prepare a call with the provided `method` and `path`.
-    pub fn call<'a>(&'a self, method: Method, path: &str) -> Call<'a, I> {
+    pub fn call<'a>(&'a self, method: Method, path: &str) -> Call<'a> {
         Call {
             app: &self.app,
             req: request(method, path),
@@ -34,38 +34,38 @@ impl<I: Sync + Send + Clone + 'static> Client<I> {
     }
 
     /// Prepare a GET call with the provided `path`.
-    pub fn get<'a>(&'a self, path: &str) -> Call<'a, I> {
+    pub fn get<'a>(&'a self, path: &str) -> Call<'a> {
         self.call(Method::GET, path)
     }
 
     /// Prepare a POST call with the provided `path`.
-    pub fn post<'a>(&'a self, path: &str) -> Call<'a, I> {
+    pub fn post<'a>(&'a self, path: &str) -> Call<'a> {
         self.call(Method::POST, path)
     }
 
     /// Prepare a PUT call with the provided `path`.
-    pub fn put<'a>(&'a self, path: &str) -> Call<'a, I> {
+    pub fn put<'a>(&'a self, path: &str) -> Call<'a> {
         self.call(Method::PUT, path)
     }
 
     /// Prepare a PATCH call with the provided `path`.
-    pub fn patch<'a>(&'a self, path: &str) -> Call<'a, I> {
+    pub fn patch<'a>(&'a self, path: &str) -> Call<'a> {
         self.call(Method::PATCH, path)
     }
 
     /// Prepare a DELETE call with the provided `path`.
-    pub fn delete<'a>(&'a self, path: &str) -> Call<'a, I> {
+    pub fn delete<'a>(&'a self, path: &str) -> Call<'a> {
         self.call(Method::DELETE, path)
     }
 }
 
 /// A test call.
-pub struct Call<'a, I> {
-    app: &'a App<I>,
+pub struct Call<'a> {
+    app: &'a App,
     req: Request<Body>,
 }
 
-impl<'a, I: Sync + Send + Clone + 'static> Call<'a, I> {
+impl<'a> Call<'a> {
     /// Set a request body for this call.
     pub fn body<B: Into<Body>>(mut self, body: B) -> Self {
         *self.req.body_mut() = body.into();

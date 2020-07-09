@@ -3,7 +3,7 @@ use hyperbole::{reply::Reply, *};
 
 #[tokio::test]
 async fn test_json_response() {
-    let app = App::empty()
+    let app = App::new()
         .context()
         .get(path![x: u32 / y: f64], |cx: record![x, y]| async move {
             reply::jsonr(&cx)

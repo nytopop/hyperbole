@@ -170,6 +170,47 @@ where
     }
 }
 
+#[derive(Clone)]
+pub struct InjectAll<L, T> {
+    prev: L,
+    value: T,
+}
+
+impl<L, T> InjectAll<L, T> {
+    pub fn new(prev: L, value: T) -> Self {
+        Self { prev, value }
+    }
+}
+
+impl<Req, P, L, T> Link<Req, P> for InjectAll<L, T>
+where
+    L: Link<Req, P>,
+    <L as Link<Req, P>>::Output: Add<T>,
+    Add2<<L as Link<Req, P>>::Output, T>: Send,
+    T: Clone + Send,
+{
+    type Output = Add2<<L as Link<Req, P>>::Output, T>;
+
+    type Params = <L as Link<Req, P>>::Params;
+
+    type Error = <L as Link<Req, P>>::Error;
+
+    doc_hack! {
+        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
+        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
+    }
+
+    fn handle_link(&self, req: Req, p: P) -> Self::Future {
+        let rest = self.value.clone();
+
+        let fut = (self.prev)
+            .handle_link(req, p)
+            .map_ok(move |(head, p)| (head + rest, p));
+
+        doc_hack! { fut.boxed(), fut }
+    }
+}
+
 pub struct Map<L, F, Args, Ix> {
     prev: L,
     next: Arc<F>,

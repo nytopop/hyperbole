@@ -1,7 +1,7 @@
 //! A simple json CRUD api.
 use hyper::{server::Server, StatusCode};
 use hyperbole::{
-    body, path, record, record_args,
+    body, f, path, record, record_args,
     reply::{self, Reply},
     App, Response,
 };
@@ -63,8 +63,9 @@ impl FromStr for IdRange {
 
 #[tokio::main]
 async fn main() -> hyper::Result<()> {
-    let app = App::new(record![db = Db::default()])
+    let app = App::new()
         .context_path(path!["widgets"])
+        .inject(f![db = Db::default()])
         // POST /widgets/new
         .post_with(path!["new"], body::jsonr::<record![name, desc, count]>, new)
         // GET /widgets

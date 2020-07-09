@@ -61,7 +61,7 @@ bad_request_display! { JsonBodyError }
 ///     "yepperz"
 /// }
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     // inline with get_with:
 ///     .get_with(path!["the-thing"], json::<ThingRequest>, the_thing)
@@ -100,7 +100,7 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Js
 ///     "yepperz"
 /// }
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     // inline with get_with:
 ///     .get_with(path!["the-thing"], jsonr::<record![x, y, z]>, the_thing)
@@ -154,7 +154,7 @@ bad_request_display! { FormBodyError }
 ///     "yepperz"
 /// }
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     // inline with get_with:
 ///     .get_with(path!["the-thing"], form::<ThingRequest>, the_thing)
@@ -193,7 +193,7 @@ pub async fn form<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Fo
 ///     "yepperz"
 /// }
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     // inline with get_with:
 ///     .get_with(path!["the-thing"], formr::<record![x, y, z]>, the_thing)
@@ -260,7 +260,7 @@ bad_request_display! { AutoBodyError }
 ///     "yepperz"
 /// }
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     // inline with get_with:
 ///     .get_with(path!["the-thing"], auto::<ThingRequest>, the_thing)
@@ -316,7 +316,7 @@ where T: DeserializeOwned {
 ///     "yepperz"
 /// }
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     // inline with get_with:
 ///     .get_with(path!["the-thing"], autor::<record![x, y, z]>, the_thing)

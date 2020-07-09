@@ -33,7 +33,7 @@ impl Reply for HeaderError {
 /// use hyper::header::{HeaderValue, ACCEPT};
 /// use hyperbole::{mw, App, Hlist};
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     .try_map(mw::header(ACCEPT))
 ///     .map(|cx: Hlist![HeaderValue]| cx)
@@ -60,7 +60,7 @@ pub fn header(
 /// use hyper::header::{HeaderValue, ACCEPT};
 /// use hyperbole::{mw, App, Hlist};
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     .map(mw::header_opt(ACCEPT))
 ///     .map(|cx: Hlist![Option<HeaderValue>]| cx)
@@ -84,7 +84,7 @@ pub fn header_opt(
 /// use headers::{authorization::Basic, Authorization};
 /// use hyperbole::{mw, App, Hlist};
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     .try_map(mw::typed_header::<Authorization<Basic>>)
 ///     .map(|cx: Hlist![Authorization<Basic>]| {
@@ -110,7 +110,7 @@ pub fn typed_header<H: Header>(cx: Hlist![HeaderMap]) -> Result<Hlist![H, Header
 /// use headers::ContentType;
 /// use hyperbole::{mw, App, Hlist};
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     .map(mw::typed_header_opt::<ContentType>)
 ///     .map(|cx: Hlist![Option<ContentType>]| match cx.get() {
@@ -157,7 +157,7 @@ impl Reply for CookieError {
 /// ```
 /// use hyperbole::{mw, record, App};
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     .try_map(mw::cookie::<"some_cookie">)
 ///     .map(|cx: record![some_cookie: String]| {
@@ -190,7 +190,7 @@ pub fn cookie<const NAME: &'static str>(
 /// ```
 /// use hyperbole::{mw, record, App};
 ///
-/// let _app = App::empty()
+/// let _app = App::new()
 ///     .context()
 ///     .map(mw::cookie_opt::<"some_cookie">)
 ///     .map(|cx: record![some_cookie: Option<String>]| {

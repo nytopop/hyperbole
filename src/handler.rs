@@ -33,28 +33,25 @@ impl Handler for NotFound {
     }
 }
 
-pub struct Chain<I, P, L> {
-    state: I,
+pub struct Chain<P, L> {
     path: PathSpec<P>,
     link: L,
 }
 
-impl<I: Clone, P, L: Clone> Clone for Chain<I, P, L> {
+impl<P, L: Clone> Clone for Chain<P, L> {
     fn clone(&self) -> Self {
-        let state = self.state.clone();
         let path = self.path.clone();
         let link = self.link.clone();
 
-        Self { state, path, link }
+        Self { path, link }
     }
 }
 
-impl<I: 'static, P: 'static, L: 'static> Handler for Chain<I, P, L>
+impl<P: 'static, L: 'static> Handler for Chain<P, L>
 where
-    I: Sync + Send + Clone,
     P: Parser<Cluster>,
-    L: Sync + Send + Link<Init<I>, P, Output = Response, Params = HNil>,
-    <L as Link<Init<I>, P>>::Error: Reply,
+    L: Sync + Send + Link<Init, P, Output = Response, Params = HNil>,
+    <L as Link<Init, P>>::Error: Reply,
 {
     fn handle(&self, req: Request<Body>, addr: SocketAddr) -> BoxFuture<'static, Response> {
         let (p, body) = req.into_parts();
@@ -72,7 +69,6 @@ where
             p.headers,
             p.extensions,
             addr,
-            ...self.state.clone()
         ];
 
         (self.link.handle_link(state, params))
@@ -82,30 +78,27 @@ where
     }
 }
 
-impl<I, P> Chain<I, P, Base> {
-    pub const fn new(state: I, path: PathSpec<P>) -> Self {
-        let link = Base;
-        Self { state, path, link }
+impl<P> Chain<P, Base> {
+    pub const fn new(path: PathSpec<P>) -> Self {
+        Self { path, link: Base }
     }
 }
 
-impl<I, P, L> Chain<I, P, L> {
-    pub fn link_next<Ln, F: FnOnce(L) -> Ln>(self, wrap: F) -> Chain<I, P, Ln> {
-        let state = self.state;
+impl<P, L> Chain<P, L> {
+    pub fn link_next<Ln, F: FnOnce(L) -> Ln>(self, wrap: F) -> Chain<P, Ln> {
         let path = self.path;
         let link = wrap(self.link);
-        Chain { state, path, link }
+        Chain { path, link }
     }
 
-    pub fn add_path<_P>(self, spec: PathSpec<_P>) -> Chain<I, Add2<P, Params<_P>>, L>
+    pub fn add_path<_P>(self, spec: PathSpec<_P>) -> Chain<Add2<P, Params<_P>>, L>
     where
         P: Add<Params<_P>>,
         _P: Parser<Segment>,
     {
-        let state = self.state;
         let path = self.path.append(spec);
         let link = self.link;
-        Chain { state, path, link }
+        Chain { path, link }
     }
 
     pub const fn path(&self) -> &PathSpec<P> {
