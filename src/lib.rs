@@ -201,6 +201,13 @@ pub struct App {
     not_found: Box<dyn Handler>,
 }
 
+impl Default for App {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl App {
     /// Returns a new [App] with no handlers.
     ///
