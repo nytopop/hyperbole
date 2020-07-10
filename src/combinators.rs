@@ -13,6 +13,11 @@ use std::{future::Future, marker::PhantomData, ops::Add, sync::Arc};
 #[cfg(doc)]
 use futures::future::BoxFuture;
 
+pub trait Coprod {}
+
+impl Coprod for CNil {}
+impl<H, T> Coprod for Coproduct<H, T> {}
+
 pub trait CoprodAppend<T> {
     type Output;
 
@@ -399,7 +404,7 @@ impl<Req, P, L, F, E> Link<Req, P> for MapErrs<L, F>
 where
     L: Link<Req, P>,
     F: Fn(<L as Link<Req, P>>::Error) -> E + Sync + Send,
-    E: Reply,
+    E: Coprod + Reply,
 {
     type Output = <L as Link<Req, P>>::Output;
 

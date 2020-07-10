@@ -78,7 +78,6 @@ use reply::Reply;
 use tree::{Cluster, Node, Params, Parser, PathSpec, Route, Segment};
 
 use frunk_core::{
-    coproduct::{CNil, Coproduct},
     hlist::{HList, HNil},
     indices::Here,
 };
@@ -682,7 +681,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///
     /// let _ctx = App::new()
     ///     .context()
-    ///     .inject_all(record![a = "asdf", b = 42])
+    ///     .inject_all(record![a = "foobar", b = 42])
     ///     .map(|cx: record![b, a]| cx)
     ///     .inject_all(record![c = ()])
     ///     .map(|cx: record![a, b, c]| cx);
@@ -876,7 +875,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     pub fn map_errs<F, E>(self, f: F) -> Ctx<P, MapErrs<L, F>>
     where
         F: Fn(<L as Link<Init, P>>::Error) -> E,
-        E: IsCoproduct + Reply,
+        E: Reply,
         L: Link<Init, P>,
         MapErrs<L, F>: Link<Init, P>,
     {
@@ -1178,16 +1177,3 @@ pub trait CtxState3<L, P, _P, Pix, W, WArgs, Wix, F, Args, Ix> = where
     Add2<P, Params<_P>>: Parser<Cluster>,
     End<TryThen<Path<L, _P, Pix>, W, WArgs, Wix>, F, Args, Ix>:
         Link<Init, Add2<P, Params<_P>>, Output = Response, Params = HNil> + 'static;
-
-mod sealed {
-    pub trait Seal {}
-}
-
-/// Types that represent coproducts.
-pub trait IsCoproduct: sealed::Seal {}
-
-impl sealed::Seal for CNil {}
-impl IsCoproduct for CNil {}
-
-impl<H, T: sealed::Seal> sealed::Seal for Coproduct<H, T> {}
-impl<H, T: IsCoproduct> IsCoproduct for Coproduct<H, T> {}
