@@ -984,6 +984,7 @@ mod tests {
     fn parse_params<P>(spec: &PathSpec<P>, path: &str, query: Option<&str>) -> Parsed<P>
     where P: Parser<Segment> {
         // NOTE(safety): we're just changing a ZST tag
+        #[allow(clippy::transmute_ptr_to_ptr)]
         let spec: &PathSpec<Params<P>> = unsafe { mem::transmute(spec) };
 
         spec.parse_params(path, query).unwrap().head

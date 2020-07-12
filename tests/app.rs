@@ -83,7 +83,7 @@ async fn test_route_dispatch_with_ctx_val() {
         .collapse()
         .test_client();
 
-    for (path, val) in vec![
+    for (path, val) in &[
         ("/a", 0u32),
         ("/b", 1),
         ("/c", 2),

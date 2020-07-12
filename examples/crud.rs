@@ -1,4 +1,5 @@
 //! A simple json CRUD api.
+#![allow(clippy::option_map_unit_fn)]
 use hyper::{server::Server, StatusCode};
 use hyperbole::{
     body, f, path, record, record_args,
