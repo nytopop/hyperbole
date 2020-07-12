@@ -201,7 +201,6 @@ pub struct App {
 }
 
 impl Default for App {
-    #[inline]
     fn default() -> Self {
         Self::new()
     }
@@ -263,20 +262,17 @@ impl App {
     ///     .context_path(path!["xyz" / param: u32])
     ///     .collapse();
     /// ```
-    pub fn context_path<P: Parser<Segment>>(
+    pub fn context_path<P: HList + Parser<Segment> + Send>(
         self,
         spec: PathSpec<P>,
-    ) -> Ctx<Params<P>, Path<Base, P, Here>>
+    ) -> Ctx<Params<P>, Path<Base, P, Here>, App>
     {
-        let spec = PathSpec::ROOT.append(spec);
-        let chain = Chain::new(spec).link_next(Path::new);
-
-        Ctx { app: self, chain }
+        Ctx::with_source(self).path(spec)
     }
 
     /// Begin a new request context at the root path.
-    pub fn context(self) -> Ctx<Params<HNil>, Path<Base, HNil, Here>> {
-        self.context_path(PathSpec::ROOT)
+    pub fn context(self) -> Ctx<HNil, Base, App> {
+        Ctx::with_source(self)
     }
 
     /// Configure a handler for the case where an incoming request does not match any existing
@@ -375,9 +371,43 @@ impl App {
     }
 
     /// Create a test client for this app.
-    #[inline]
     pub fn test_client(self) -> test::Client {
         test::Client { app: self }
+    }
+
+    /// Merge route handlers into this [App].
+    ///
+    /// # Panics
+    /// This method panics if any routes in `routes` conflict with a route in the [App].
+    ///
+    /// ```should_panic
+    /// use hyperbole::{path, record, App, Ctx};
+    ///
+    /// let routes = Ctx::default()
+    ///     .get(path!["conflict"], |_: record![]| async { "" })
+    ///     .get(path!["conflict"], |_: record![]| async { "" })
+    ///     .into_routes();
+    ///
+    /// // 'a handler is already registered for path "/conflict"'
+    /// let _app = App::new().merge(routes);
+    /// ```
+    ///
+    /// ```should_panic
+    /// use hyperbole::{path, record, App, Ctx};
+    ///
+    /// let routes = Ctx::default()
+    ///     .get(path!["something"], |_: record![]| async { "" })
+    ///     .get(path![param: u32], |_: record![]| async { "" })
+    ///     .into_routes();
+    ///
+    /// // 'wildcard ":param" conflicts with existing children in path "/:param"'
+    /// let _app = App::new().merge(routes);
+    /// ```
+    pub fn merge(mut self, routes: Routes) -> Self {
+        for r in routes.inner {
+            self.get_node_mut(r.method).insert(&r.path, r.handler);
+        }
+        self
     }
 }
 
@@ -580,8 +610,9 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// [try_then]: Ctx::try_then
 /// [map_errs]: Ctx::map_errs
 /// [map_err]: Ctx::map_err
-pub struct Ctx<P, L> {
-    app: App,
+pub struct Ctx<P, L, S = ()> {
+    source: S,
+    routes: Vec<RouteEntry>,
     chain: Chain<P, L>,
 }
 
@@ -647,10 +678,66 @@ macro_rules! handle_with {
     };
 }
 
-impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
-    fn link_next<Ln, F: FnOnce(L) -> Ln>(self, wrap: F) -> Ctx<P, Ln> {
+impl Default for Ctx<HNil, Base> {
+    fn default() -> Self {
+        Self::with_source(())
+    }
+}
+
+impl<S> Ctx<HNil, Base, S> {
+    fn with_source(source: S) -> Self {
+        Self {
+            source,
+            routes: vec![],
+            chain: Chain::new(path![]),
+        }
+    }
+}
+
+impl<P: HList + Send + Parser<Segment>> Ctx<Params<P>, Path<Base, P, Here>> {
+    /// Create a new request context at the provided base path. Any parameters parsed from the
+    /// uri will be merged into the context's state.
+    ///
+    /// The [path!] macro can be used to construct an appropriate [`PathSpec`].
+    ///
+    /// # Examples
+    /// ```
+    /// use hyperbole::{path, record, Ctx};
+    ///
+    /// let _ctx = Ctx::with_path(path!["foo" / "bar" / baz: f64])
+    ///     .map(|cx: record![baz]| record![qux = *cx.head > 3.14159265])
+    ///     .map(|cx: record![qux]| cx);
+    /// ```
+    pub fn with_path(spec: PathSpec<P>) -> Self {
+        Ctx::default().path(spec)
+    }
+}
+
+impl<T: Clone> Ctx<HNil, InjectAll<Base, T>>
+where InjectAll<Base, T>: Link<Init, HNil>
+{
+    /// Create a new request context with an hlist of cloneable values. All elements of `values`
+    /// will be merged into the context's state.
+    ///
+    /// # Examples
+    /// ```
+    /// use hyperbole::{record, Ctx};
+    ///
+    /// let _ctx = Ctx::with_state(record![x = 4, y = "hello", z = "world"])
+    ///     .map(|cx: record![x]| cx)
+    ///     .map(|cx: record![y, z]| cx)
+    ///     .map(|cx: record![z, x, y]| cx);
+    /// ```
+    pub fn with_state(values: T) -> Self {
+        Ctx::default().inject_all(values)
+    }
+}
+
+impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
+    fn link_next<Ln, F: FnOnce(L) -> Ln>(self, wrap: F) -> Ctx<P, Ln, S> {
         Ctx {
-            app: self.app,
+            source: self.source,
+            routes: self.routes,
             chain: self.chain.link_next(wrap),
         }
     }
@@ -668,7 +755,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     .inject(f![xyz = "this is a named field"])
     ///     .map(|cx: record![xyz]| hlist![]);
     /// ```
-    pub fn inject<T: Clone>(self, value: T) -> Ctx<P, Inject<L, T>>
+    pub fn inject<T: Clone>(self, value: T) -> Ctx<P, Inject<L, T>, S>
     where Inject<L, T>: Link<Init, P> {
         self.link_next(|link| Inject::new(link, value))
     }
@@ -686,7 +773,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     .inject_all(record![c = ()])
     ///     .map(|cx: record![a, b, c]| cx);
     /// ```
-    pub fn inject_all<T: Clone>(self, values: T) -> Ctx<P, InjectAll<L, T>>
+    pub fn inject_all<T: Clone>(self, values: T) -> Ctx<P, InjectAll<L, T>, S>
     where InjectAll<L, T>: Link<Init, P> {
         self.link_next(|link| InjectAll::new(link, values))
     }
@@ -718,7 +805,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     .map(|cx: Hlist![]| hlist![12345])
     ///     .map(fun);
     /// ```
-    pub fn map<F, Args, Ix, Merge>(self, f: F) -> Ctx<P, Map<L, F, Args, Ix>>
+    pub fn map<F, Args, Ix, Merge>(self, f: F) -> Ctx<P, Map<L, F, Args, Ix>, S>
     where
         F: Fn(Args) -> Merge,
         Merge: HList,
@@ -758,7 +845,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     })
     ///     .map_err(|e: &str| "e is the above error, if it happened");
     /// ```
-    pub fn try_map<F, Args, Ix, Merge, E>(self, f: F) -> Ctx<P, TryMap<L, F, Args, Ix>>
+    pub fn try_map<F, Args, Ix, Merge, E>(self, f: F) -> Ctx<P, TryMap<L, F, Args, Ix>, S>
     where
         F: Fn(Args) -> Result<Merge, E>,
         Merge: HList,
@@ -797,7 +884,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     .then(|cx: Hlist![]| async move { cx })
     ///     .then(fun);
     /// ```
-    pub fn then<F, Args, Ix, Fut, Merge>(self, f: F) -> Ctx<P, Then<L, F, Args, Ix>>
+    pub fn then<F, Args, Ix, Fut, Merge>(self, f: F) -> Ctx<P, Then<L, F, Args, Ix>, S>
     where
         F: Fn(Args) -> Fut,
         Fut: Future<Output = Merge>,
@@ -843,7 +930,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     })
     ///     .map(|cx: record![color]| cx);
     /// ```
-    pub fn try_then<F, Args, Ix, Fut, Merge, E>(self, f: F) -> Ctx<P, TryThen<L, F, Args, Ix>>
+    pub fn try_then<F, Args, Ix, Fut, Merge, E>(self, f: F) -> Ctx<P, TryThen<L, F, Args, Ix>, S>
     where
         F: Fn(Args) -> Fut,
         Fut: Future<Output = Result<Merge, E>>,
@@ -872,7 +959,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     .map(|cx: record![]| cx)
     ///     .collapse();
     /// ```
-    pub fn map_errs<F, E>(self, f: F) -> Ctx<P, MapErrs<L, F>>
+    pub fn map_errs<F, E>(self, f: F) -> Ctx<P, MapErrs<L, F>, S>
     where
         F: Fn(<L as Link<Init, P>>::Error) -> E,
         E: Reply,
@@ -909,7 +996,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     .map_err(|e: Vec<u8>| "it was Vec<u8>")
     ///     .collapse();
     /// ```
-    pub fn map_err<F, E, Ix, R>(self, f: F) -> Ctx<P, MapErr<L, F, E, Ix>>
+    pub fn map_err<F, E, Ix, R>(self, f: F) -> Ctx<P, MapErr<L, F, E, Ix>, S>
     where
         F: Fn(E) -> R,
         R: Reply,
@@ -942,14 +1029,15 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     // GET /first/:x/:y/abc
     ///     .get(path!["abc"], |cx: record![x, y]| async { "" });
     /// ```
-    pub fn path<_P, Ix>(self, spec: PathSpec<_P>) -> Ctx<Add2<P, Params<_P>>, Path<L, _P, Ix>>
+    pub fn path<_P, Ix>(self, spec: PathSpec<_P>) -> Ctx<Add2<P, Params<_P>>, Path<L, _P, Ix>, S>
     where
         P: Add<Params<_P>>,
         _P: Parser<Segment>,
         Path<L, _P, Ix>: Link<Init, Add2<P, Params<_P>>>,
     {
         Ctx {
-            app: self.app,
+            source: self.source,
+            routes: self.routes,
             chain: self.chain.add_path(spec).link_next(Path::new),
         }
     }
@@ -994,30 +1082,6 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     .get(path!["more" / neat: u32 / "nested"], more)
     ///     .get(path!["impl_reply"], using_impl);
     /// ```
-    ///
-    /// # Panics
-    /// This method will panic if the complete path conflicts with any other route registered
-    /// under the same http method.
-    ///
-    /// ```should_panic
-    /// use hyperbole::{path, record, App};
-    ///
-    /// // 'a handler is already registered for path "/conflict"'
-    /// let _ctx = App::new()
-    ///     .context()
-    ///     .get(path!["conflict"], |_: record![]| async { "" })
-    ///     .get(path!["conflict"], |_: record![]| async { "" });
-    /// ```
-    ///
-    /// ```should_panic
-    /// use hyperbole::{path, record, App};
-    ///
-    /// // 'wildcard ":param" conflicts with existing children in path "/:param"'
-    /// let _ctx = App::new()
-    ///     .context()
-    ///     .get(path!["something"], |_: record![]| async { "" })
-    ///     .get(path![param: u32], |_: record![]| async { "" });
-    /// ```
     pub fn handle<_P, F, Args, Ix, Pix, Fut, Resp>(
         mut self,
         method: Method,
@@ -1035,9 +1099,11 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
             .link_next(|link| -> Path<_, _P, Pix> { Path::new(link) })
             .link_next(|link| -> End<_, F, Args, Ix> { End::new(link, handler) });
 
-        let path = format!("{}", chain.path());
-
-        self.app.get_node_mut(method).insert(&path, Box::new(chain));
+        self.routes.push(RouteEntry {
+            method,
+            path: format!("{}", chain.path()),
+            handler: Box::new(chain),
+        });
 
         self
     }
@@ -1074,40 +1140,6 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
     ///     .collapse();
     /// ```
     ///
-    /// # Panics
-    /// This method will panic if the complete path conflicts with any other route registered
-    /// under the same http method.
-    ///
-    /// ```should_panic
-    /// use hyperbole::{path, record, App};
-    /// use std::convert::Infallible;
-    ///
-    /// async fn noop(cx: record![]) -> Result<record![], Infallible> {
-    ///     Ok(cx)
-    /// }
-    ///
-    /// // 'a handler is already registered for path "/conflict"'
-    /// let _ctx = App::new()
-    ///     .context()
-    ///     .get_with(path!["conflict"], noop, |_: record![]| async { "" })
-    ///     .get_with(path!["conflict"], noop, |_: record![]| async { "" });
-    /// ```
-    ///
-    /// ```should_panic
-    /// use hyperbole::{path, record, App};
-    /// use std::convert::Infallible;
-    ///
-    /// async fn noop(cx: record![]) -> Result<record![], Infallible> {
-    ///     Ok(cx)
-    /// }
-    ///
-    /// // 'wildcard ":param" conflicts with existing children in path "/:param"'
-    /// let _ctx = App::new()
-    ///     .context()
-    ///     .get_with(path!["something"], noop, |_: record![]| async { "" })
-    ///     .get_with(path![param: u32], noop, |_: record![]| async { "" });
-    /// ```
-    ///
     /// [handle]: Ctx::handle
     /// [try_then]: Ctx::try_then
     pub fn handle_with<_P, Pix, W, WArgs, WFut, Merge, E, Wix, F, Args, Fut, Resp, Ix>(
@@ -1134,9 +1166,11 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
             .link_next(|link| -> TryThen<_, W, WArgs, Wix> { TryThen::new(link, with) })
             .link_next(|link| -> End<_, F, Args, Ix> { End::new(link, handler) });
 
-        let path = format!("{}", chain.path());
-
-        self.app.get_node_mut(method).insert(&path, Box::new(chain));
+        self.routes.push(RouteEntry {
+            method,
+            path: format!("{}", chain.path()),
+            handler: Box::new(chain),
+        });
 
         self
     }
@@ -1149,16 +1183,50 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L> {
         [delete_with, Method::DELETE]
     );
 
+    /// Collapse this context and retrieve any routes registered via [handle] (or helpers like
+    /// [get], [post], etc).
+    pub fn into_routes(self) -> Routes {
+        Routes { inner: self.routes }
+    }
+}
+
+impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L, App> {
     /// Collapse this context and return to the base [App].
     ///
-    /// This discards any accumulated combinators and path specifications, while retaining
-    /// handlers registered via [handle] (or helpers like [get], [post], etc).
+    /// This discards any accumulated combinators and path specifications, while retaining handlers
+    /// registered via [handle] (or helpers like [get], [post], etc).
+    ///
+    /// # Panics
+    /// This method panics if any registered handler paths (with the same method) conflict with
+    /// eachother or any routes in the [App].
+    ///
+    /// ```should_panic
+    /// use hyperbole::{path, record, App};
+    ///
+    /// // 'a handler is already registered for path "/conflict"'
+    /// let _app = App::new()
+    ///     .context()
+    ///     .get(path!["conflict"], |_: record![]| async { "" })
+    ///     .get(path!["conflict"], |_: record![]| async { "" })
+    ///     .collapse();
+    /// ```
+    ///
+    /// ```should_panic
+    /// use hyperbole::{path, record, App};
+    ///
+    /// // 'wildcard ":param" conflicts with existing children in path "/:param"'
+    /// let _app = App::new()
+    ///     .context()
+    ///     .get(path!["something"], |_: record![]| async { "" })
+    ///     .get(path![param: u32], |_: record![]| async { "" })
+    ///     .collapse();
+    /// ```
     ///
     /// [handle]: Ctx::handle
     /// [get]: Ctx::get
     /// [post]: Ctx::post
     pub fn collapse(self) -> App {
-        self.app
+        self.source.merge(Routes { inner: self.routes })
     }
 }
 
@@ -1177,3 +1245,14 @@ pub trait CtxState3<L, P, _P, Pix, W, WArgs, Wix, F, Args, Ix> = where
     Add2<P, Params<_P>>: Parser<Cluster>,
     End<TryThen<Path<L, _P, Pix>, W, WArgs, Wix>, F, Args, Ix>:
         Link<Init, Add2<P, Params<_P>>, Output = Response, Params = HNil> + 'static;
+
+/// A collection of route handlers.
+pub struct Routes {
+    inner: Vec<RouteEntry>,
+}
+
+struct RouteEntry {
+    method: Method,
+    path: String,
+    handler: Box<dyn Handler>,
+}
