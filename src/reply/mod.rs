@@ -189,15 +189,13 @@ pub fn jsonr<'a, T: IsoEncode<'a>>(value: &'a T) -> Response {
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{f, hlist, path, record, reply, App, Hlist};
+/// use hyperbole::{f, hlist, path, record, reply, Ctx, Hlist};
 ///
-/// let _app = App::new()
-///     .context()
+/// let _ctx = Ctx::default()
 ///     .map(|_: Hlist![]| hlist!["this is my response"])
 ///     .get(path!["i-want-my-str"], reply::extract::<&str>)
 ///     .map(|_: Hlist![]| record![foo = "here is fresh foo"])
-///     .get(path!["unhand-me-a-foo"], reply::extract::<f![foo]>)
-///     .collapse();
+///     .get(path!["unhand-me-a-foo"], reply::extract::<f![foo]>);
 /// ```
 pub async fn extract<T: Reply>(cx: Hlist![T]) -> T {
     cx.head
@@ -250,16 +248,14 @@ pub fn filesystem(base_path: &str) -> impl Fn(Hlist![Method, Uri, HeaderMap]) ->
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{path, record, reply, App};
+/// use hyperbole::{path, record, reply, Ctx};
 ///
-/// let _app = App::new()
-///     .context()
+/// let _ctx = Ctx::default()
 ///     // use a path! parser to extract `path: String` from the uri
 ///     .get(path!["css" / *path: String], reply::filesystem_path("/srv"))
 ///     // or populate `path: String` in a middleware
 ///     .map(|cx: record![]| record![path = "an-image-file.jpg".to_owned()])
-///     .get(path!["image"], reply::filesystem_path("/srv"))
-///     .collapse();
+///     .get(path!["image"], reply::filesystem_path("/srv"));
 /// ```
 pub fn filesystem_path(
     base_path: &str,

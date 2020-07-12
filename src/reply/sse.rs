@@ -55,22 +55,19 @@ impl<S: Stream<Item = Vec<Event>>> EventStream<S> {
     /// use hyperbole::{
     ///     path,
     ///     reply::sse::{Event, EventStream},
-    ///     App, Hlist,
+    ///     Ctx, Hlist,
     /// };
     ///
-    /// let _app = App::new()
-    ///     .context()
-    ///     .get(path!["my-first-event-stream"], |cx: Hlist![]| async {
-    ///         let events = stream::iter(Some(vec![
-    ///             Event::comment("this is an event"),
-    ///             Event::id("neato"),
-    ///             Event::data("hello worldo"),
-    ///             Event::event("test"),
-    ///         ]));
+    /// let _ctx = Ctx::default().get(path!["my-first-event-stream"], |cx: Hlist![]| async {
+    ///     let events = stream::iter(Some(vec![
+    ///         Event::comment("this is an event"),
+    ///         Event::id("neato"),
+    ///         Event::data("hello worldo"),
+    ///         Event::event("test"),
+    ///     ]));
     ///
-    ///         EventStream::new(events)
-    ///     })
-    ///     .collapse();
+    ///     EventStream::new(events)
+    /// });
     /// ```
     pub fn new(events: S) -> Self {
         Self { inner: events }
@@ -88,23 +85,20 @@ impl<S: Stream<Item = Vec<Event>>> EventStream<Padded<S>> {
     /// use hyperbole::{
     ///     path,
     ///     reply::sse::{Event, EventStream},
-    ///     App, Hlist,
+    ///     Ctx, Hlist,
     /// };
     /// use std::time::Duration;
     ///
-    /// let _app = App::new()
-    ///     .context()
-    ///     .get(path!["my-first-event-stream"], |cx: Hlist![]| async {
-    ///         let events = stream::iter(Some(vec![
-    ///             Event::comment("this is an event"),
-    ///             Event::id("neato"),
-    ///             Event::data("hello worldo"),
-    ///             Event::event("test"),
-    ///         ]));
+    /// let _ctx = Ctx::default().get(path!["my-first-event-stream"], |cx: Hlist![]| async {
+    ///     let events = stream::iter(Some(vec![
+    ///         Event::comment("this is an event"),
+    ///         Event::id("neato"),
+    ///         Event::data("hello worldo"),
+    ///         Event::event("test"),
+    ///     ]));
     ///
-    ///         EventStream::keepalive(Duration::from_secs(15), events)
-    ///     })
-    ///     .collapse();
+    ///     EventStream::keepalive(Duration::from_secs(15), events)
+    /// });
     /// ```
     pub fn keepalive(keepalive: Duration, events: S) -> Self {
         let padded = Padded {

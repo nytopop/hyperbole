@@ -453,7 +453,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///
 /// ```
 /// use hyper::Body;
-/// use hyperbole::{hlist, App, Hlist};
+/// use hyperbole::{hlist, Ctx, Hlist};
 ///
 /// #[derive(Copy, Clone)]
 /// struct DbHandle;
@@ -461,9 +461,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// struct A;
 /// struct B;
 ///
-/// let _ctx = App::new()
-///     .context()
-///     .inject(DbHandle)
+/// let _ctx = Ctx::with_state(hlist![DbHandle])
 ///     // move nothing, and return nothing to be merged
 ///     .map(|cx: Hlist![]| cx)
 ///     // move req body, but merge it back
@@ -484,10 +482,9 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///
 /// ```
 /// use hyper::Body;
-/// use hyperbole::{access, path, record, record_args, App, Hlist};
+/// use hyperbole::{access, path, record, record_args, Ctx, Hlist};
 ///
-/// let _ctx = App::new()
-///     .context_path(path![dynamic: u32])
+/// let _ctx = Ctx::with_path(path![dynamic: u32])
 ///     // GET /:dynamic/echo_req
 ///     .get(path!["echo_req"], |cx: Hlist![Body]| async move {
 ///         // hlists can be converted into tuples
@@ -533,11 +530,10 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     body::{jsonr, JsonBodyError},
 ///     record,
 ///     reply::Reply,
-///     App, Coprod,
+///     Coprod, Ctx,
 /// };
 ///
-/// let _app = App::new()
-///     .context()
+/// let _ctx = Ctx::default()
 ///     // attempt to parse the body as a json object:
 ///     .try_then(jsonr::<record![x: u32, y: String]>)
 ///     // if the above fails, we can adjust the error with map_err:
@@ -549,8 +545,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///
 ///         // return type must be a coproduct as well
 ///         <Coprod![_]>::inject(err)
-///     })
-///     .collapse();
+///     });
 /// ```
 ///
 /// # Limitations
@@ -560,12 +555,11 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// begin failing if duplicate types are encountered.
 ///
 /// ```compile_fail,E0282
-/// use hyperbole::{hlist, App, Hlist};
+/// use hyperbole::{hlist, Ctx, Hlist};
 ///
 /// struct A(u32);
 ///
-/// let _app = App::new()
-///     .context()
+/// let _ctx = Ctx::default()
 ///     // merge an A
 ///     .map(|cx: Hlist![]| hlist![A(1)])
 ///     // merge an A (state now contains two `A`s)
@@ -574,8 +568,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     //
 ///     // error[E0282]: type annotations needed
 ///     //     cannot infer type for type parameter `TailIndex`
-///     .map(|cx: Hlist![A]| cx)
-///     .collapse();
+///     .map(|cx: Hlist![A]| cx);
 /// ```
 ///
 /// [Named fields][field::Field] can be used to disambiguate between what would otherwise be
@@ -585,12 +578,11 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// The above example can be rewritten using named fields to avoid the inference failure:
 ///
 /// ```
-/// use hyperbole::{record, App};
+/// use hyperbole::{record, Ctx};
 ///
 /// struct A(u32);
 ///
-/// let _app = App::new()
-///     .context()
+/// let _ctx = Ctx::default()
 ///     .map(|cx: record![]| record![first = A(1)])
 ///     .map(|cx: record![]| record![second = A(2)])
 ///     // we want the A called 'second'
@@ -598,8 +590,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     // we want the A called 'first'
 ///     .map(|cx: record![first]| cx)
 ///     // we want both of them
-///     .map(|cx: record![first, second]| cx)
-///     .collapse();
+///     .map(|cx: record![first, second]| cx);
 /// ```
 ///
 /// [handle]: Ctx::handle
@@ -746,10 +737,9 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{f, hlist, record, App, Hlist};
+    /// use hyperbole::{f, hlist, record, Ctx, Hlist};
     ///
-    /// let _ctx = App::new()
-    ///     .context()
+    /// let _ctx = Ctx::default()
     ///     .inject("just an &str")
     ///     .map(|cx: Hlist![&str]| hlist![])
     ///     .inject(f![xyz = "this is a named field"])
@@ -764,10 +754,9 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{record, App};
+    /// use hyperbole::{record, Ctx};
     ///
-    /// let _ctx = App::new()
-    ///     .context()
+    /// let _ctx = Ctx::default()
     ///     .inject_all(record![a = "foobar", b = 42])
     ///     .map(|cx: record![b, a]| cx)
     ///     .inject_all(record![c = ()])
@@ -792,15 +781,14 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// # Examples
     /// ```
     /// use hyper::Body;
-    /// use hyperbole::{hlist, record_args, App, Hlist};
+    /// use hyperbole::{hlist, record_args, Ctx, Hlist};
     ///
     /// #[record_args]
     /// fn fun(_: Body, _: u32) -> Hlist![] {
     ///     hlist![]
     /// }
     ///
-    /// let _ctx = App::new()
-    ///     .context()
+    /// let _ctx = Ctx::default()
     ///     .map(|cx: Hlist![Body]| cx)
     ///     .map(|cx: Hlist![]| hlist![12345])
     ///     .map(fun);
@@ -835,10 +823,9 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{access, path, record, App};
+    /// use hyperbole::{access, path, record, Ctx};
     ///
-    /// let _ctx = App::new()
-    ///     .context_path(path![a: u32 / b: u32])
+    /// let _ctx = Ctx::with_path(path![a: u32 / b: u32])
     ///     .try_map(|cx: record![a, b]| match access!(&cx.a) > access!(&cx.b) {
     ///         false => Err("uh oh"),
     ///         true => Ok(cx),
@@ -871,15 +858,14 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// # Examples
     /// ```
     /// use hyper::Body;
-    /// use hyperbole::{hlist, record_args, App, Hlist};
+    /// use hyperbole::{hlist, record_args, Ctx, Hlist};
     ///
     /// #[record_args]
     /// async fn fun(_: Body) -> Hlist![] {
     ///     hlist![]
     /// }
     ///
-    /// let _ctx = App::new()
-    ///     .context()
+    /// let _ctx = Ctx::default()
     ///     .then(|cx: Hlist![Body]| async move { cx })
     ///     .then(|cx: Hlist![]| async move { cx })
     ///     .then(fun);
@@ -916,10 +902,9 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, record, App};
+    /// use hyperbole::{path, record, Ctx};
     ///
-    /// let _ctx = App::new()
-    ///     .context_path(path![a: f64 / b: String])
+    /// let _ctx = Ctx::with_path(path![a: f64 / b: String])
     ///     .try_then(|cx: record![a, b]| async move {
     ///         let (a, b) = cx.into();
     ///         if *a == 3.14159265 && *b != "blue" {
@@ -950,14 +935,12 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{record, App, Coprod};
+    /// use hyperbole::{record, Coprod, Ctx};
     ///
-    /// let _ctx = App::new()
-    ///     .context()
+    /// let _ctx = Ctx::default()
     ///     // without any fallible combinators, the error is an uninhabitable enum:
     ///     .map_errs(|err: Coprod![]| -> Coprod![] { match err {} })
-    ///     .map(|cx: record![]| cx)
-    ///     .collapse();
+    ///     .map(|cx: record![]| cx);
     /// ```
     pub fn map_errs<F, E>(self, f: F) -> Ctx<P, MapErrs<L, F>, S>
     where
@@ -977,7 +960,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{record, record_args, App};
+    /// use hyperbole::{record, record_args, Ctx};
     ///
     /// fn fallible_a(_: record![]) -> Result<record![], String> {
     ///     Err("uh oh".to_owned())
@@ -988,13 +971,11 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///     Err(b"uh oh".to_vec())
     /// }
     ///
-    /// let _app = App::new()
-    ///     .context()
+    /// let _ctx = Ctx::default()
     ///     .try_map(fallible_a)
     ///     .try_map(fallible_b)
     ///     .map_err(|e: String| "it was String")
-    ///     .map_err(|e: Vec<u8>| "it was Vec<u8>")
-    ///     .collapse();
+    ///     .map_err(|e: Vec<u8>| "it was Vec<u8>");
     /// ```
     pub fn map_err<F, E, Ix, R>(self, f: F) -> Ctx<P, MapErr<L, F, E, Ix>, S>
     where
@@ -1016,11 +997,10 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, record, tree::UriError, App};
+    /// use hyperbole::{path, record, tree::UriError, Ctx};
     /// use std::num::ParseFloatError;
     ///
-    /// let _ctx = App::new()
-    ///     .context()
+    /// let _ctx = Ctx::default()
     ///     .path(path!["first" / x: usize / y: f64])
     ///     .map(|cx: record![x]| cx)
     ///     .map_err(|e: UriError<ParseFloatError>| e.item)
@@ -1058,7 +1038,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// # Examples
     /// ```
     /// use hyper::Body;
-    /// use hyperbole::{hlist, path, record, record_args, reply::Reply, App, Hlist};
+    /// use hyperbole::{hlist, path, record, record_args, reply::Reply, Ctx, Hlist};
     ///
     /// #[record_args]
     /// async fn doit(baz: f64) -> &'static str {
@@ -1073,8 +1053,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///     vec![1, 2, 3, 4, 5]
     /// }
     ///
-    /// let _ctx = App::new()
-    ///     .context_path(path!["foo" / "bar" / baz: f64])
+    /// let _ctx = Ctx::with_path(path!["foo" / "bar" / baz: f64])
     ///     .get(path!["doit"], doit)
     ///     .map(|cx: record![baz]| hlist![15])
     ///     .get(path!["more" / neat: u32], more)
@@ -1128,16 +1107,15 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{body::jsonr, path, record, App};
+    /// use hyperbole::{body::jsonr, path, record, Ctx};
     ///
     /// async fn handle_abc(cx: record![a: u32, b: String, c: f64]) -> &'static str {
     ///     "neat"
     /// }
     ///
-    /// let _app = App::new()
-    ///     .context()
-    ///     .get_with(path![a: u32], jsonr::<record![b, c]>, handle_abc)
-    ///     .collapse();
+    /// let _app = Ctx::default()
+    ///     .get_with(path!["1" / a: u32], jsonr::<record![b, c]>, handle_abc)
+    ///     .get_with(path!["2" / a: u32], jsonr::<record![b, c]>, handle_abc);
     /// ```
     ///
     /// [handle]: Ctx::handle

@@ -3,29 +3,23 @@ use hyperbole::*;
 
 #[test]
 fn test_modify_uri_parser_after_erasure() {
-    let _ = App::new()
-        .context()
+    let _ = Ctx::default()
         .map(|_: Hlist![Body]| record![])
         .map(|_: record![]| record![foo = 40u64])
         .path(path![bar: u32])
-        .map(|_: record![bar, foo]| record![])
-        .collapse();
+        .map(|_: record![bar, foo]| record![]);
 
-    let _ = App::new()
-        .context()
+    let _ = Ctx::default()
         .inject(f![x = 40])
         .map(|_: record![x]| record![])
         .path(path![y: u32])
-        .map(|_: record![y]| record![])
-        .collapse();
+        .map(|_: record![y]| record![]);
 
-    let _ = App::new()
-        .context()
+    let _ = Ctx::default()
         .map(|_: record![]| record![x = 40])
         .map(|cx: record![x]| cx)
         .path(path![y: u32])
-        .map(|_: record![y]| record![])
-        .collapse();
+        .map(|_: record![y]| record![]);
 }
 
 #[tokio::test]

@@ -31,13 +31,11 @@ impl Reply for HeaderError {
 /// # Examples
 /// ```
 /// use hyper::header::{HeaderValue, ACCEPT};
-/// use hyperbole::{mw, App, Hlist};
+/// use hyperbole::{mw, Ctx, Hlist};
 ///
-/// let _app = App::new()
-///     .context()
+/// let _ctx = Ctx::default()
 ///     .try_map(mw::header(ACCEPT))
-///     .map(|cx: Hlist![HeaderValue]| cx)
-///     .collapse();
+///     .map(|cx: Hlist![HeaderValue]| cx);
 /// ```
 pub fn header(
     name: HeaderName,
@@ -58,13 +56,11 @@ pub fn header(
 /// # Examples
 /// ```
 /// use hyper::header::{HeaderValue, ACCEPT};
-/// use hyperbole::{mw, App, Hlist};
+/// use hyperbole::{mw, Ctx, Hlist};
 ///
-/// let _app = App::new()
-///     .context()
+/// let _ctx = Ctx::default()
 ///     .map(mw::header_opt(ACCEPT))
-///     .map(|cx: Hlist![Option<HeaderValue>]| cx)
-///     .collapse();
+///     .map(|cx: Hlist![Option<HeaderValue>]| cx);
 /// ```
 pub fn header_opt(
     name: HeaderName,
@@ -82,17 +78,15 @@ pub fn header_opt(
 /// # Examples
 /// ```
 /// use headers::{authorization::Basic, Authorization};
-/// use hyperbole::{mw, App, Hlist};
+/// use hyperbole::{mw, Ctx, Hlist};
 ///
-/// let _app = App::new()
-///     .context()
+/// let _ctx = Ctx::default()
 ///     .try_map(mw::typed_header::<Authorization<Basic>>)
 ///     .map(|cx: Hlist![Authorization<Basic>]| {
 ///         let user = cx.head.0.username();
 ///         let pass = cx.head.0.password();
 ///         cx
-///     })
-///     .collapse();
+///     });
 /// ```
 pub fn typed_header<H: Header>(cx: Hlist![HeaderMap]) -> Result<Hlist![H, HeaderMap], HeaderError> {
     match cx.head.typed_get() {
@@ -108,16 +102,14 @@ pub fn typed_header<H: Header>(cx: Hlist![HeaderMap]) -> Result<Hlist![H, Header
 /// # Examples
 /// ```
 /// use headers::ContentType;
-/// use hyperbole::{mw, App, Hlist};
+/// use hyperbole::{mw, Ctx, Hlist};
 ///
-/// let _app = App::new()
-///     .context()
-///     .map(mw::typed_header_opt::<ContentType>)
-///     .map(|cx: Hlist![Option<ContentType>]| match cx.get() {
+/// let _ctx = Ctx::default().map(mw::typed_header_opt::<ContentType>).map(
+///     |cx: Hlist![Option<ContentType>]| match cx.get() {
 ///         Some(ctype) => cx,
 ///         None => cx,
-///     })
-///     .collapse();
+///     },
+/// );
 /// ```
 pub fn typed_header_opt<H: Header>(cx: Hlist![HeaderMap]) -> Hlist![Option<H>, HeaderMap] {
     let h = cx.head.typed_get();
@@ -155,16 +147,14 @@ impl Reply for CookieError {
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{mw, record, App};
+/// use hyperbole::{mw, record, Ctx};
 ///
-/// let _app = App::new()
-///     .context()
-///     .try_map(mw::cookie::<"some_cookie">)
-///     .map(|cx: record![some_cookie: String]| {
+/// let _ctx = Ctx::default().try_map(mw::cookie::<"some_cookie">).map(
+///     |cx: record![some_cookie: String]| {
 ///         println!("cookie value is {:?}", cx.head);
 ///         cx
-///     })
-///     .collapse();
+///     },
+/// );
 /// ```
 pub fn cookie<const NAME: &'static str>(
     cx: Hlist![HeaderMap],
@@ -188,16 +178,14 @@ pub fn cookie<const NAME: &'static str>(
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{mw, record, App};
+/// use hyperbole::{mw, record, Ctx};
 ///
-/// let _app = App::new()
-///     .context()
-///     .map(mw::cookie_opt::<"some_cookie">)
-///     .map(|cx: record![some_cookie: Option<String>]| {
+/// let _ctx = Ctx::default().map(mw::cookie_opt::<"some_cookie">).map(
+///     |cx: record![some_cookie: Option<String>]| {
 ///         println!("cookie value is {:?}", cx.head);
 ///         cx
-///     })
-///     .collapse();
+///     },
+/// );
 /// ```
 pub fn cookie_opt<const NAME: &'static str>(
     cx: Hlist![HeaderMap],
