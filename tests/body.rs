@@ -5,7 +5,7 @@ use hyperbole::{reply::Reply, *};
 async fn test_json_response() {
     let app = App::new()
         .context()
-        .get(path![x: u32 / y: f64], |cx: R![x: _, y: _]| async move {
+        .get(uri![x: u32 / y: f64], |cx: R![x: _, y: _]| async move {
             reply::jsonr(&cx)
         })
         .collapse()

@@ -53,12 +53,11 @@ impl<S: Stream<Item = Vec<Event>>> EventStream<S> {
     /// ```
     /// use futures::stream;
     /// use hyperbole::{
-    ///     path,
     ///     reply::sse::{Event, EventStream},
-    ///     Ctx, R,
+    ///     uri, Ctx, R,
     /// };
     ///
-    /// let _ctx = Ctx::default().get(path!["my-first-event-stream"], |cx: R![]| async {
+    /// let _ctx = Ctx::default().get(uri!["my-first-event-stream"], |cx: R![]| async {
     ///     let events = stream::iter(Some(vec![
     ///         Event::comment("this is an event"),
     ///         Event::id("neato"),
@@ -83,13 +82,12 @@ impl<S: Stream<Item = Vec<Event>>> EventStream<Padded<S>> {
     /// ```
     /// use futures::stream;
     /// use hyperbole::{
-    ///     path,
     ///     reply::sse::{Event, EventStream},
-    ///     Ctx, R,
+    ///     uri, Ctx, R,
     /// };
     /// use std::time::Duration;
     ///
-    /// let _ctx = Ctx::default().get(path!["my-first-event-stream"], |cx: R![]| async {
+    /// let _ctx = Ctx::default().get(uri!["my-first-event-stream"], |cx: R![]| async {
     ///     let events = stream::iter(Some(vec![
     ///         Event::comment("this is an event"),
     ///         Event::id("neato"),

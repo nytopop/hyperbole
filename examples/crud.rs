@@ -3,9 +3,9 @@
 use hyper::{server::Server, StatusCode};
 use hyperbole::{
     body::jsonr,
-    f, path, r, record_args,
+    f, r, record_args,
     reply::{self, Reply},
-    App, Response, R,
+    uri, App, Response, R,
 };
 use serde::Serialize;
 use std::{
@@ -66,20 +66,20 @@ impl FromStr for IdRange {
 #[tokio::main]
 async fn main() -> hyper::Result<()> {
     let app = App::new()
-        .context_path(path!["widgets"])
+        .context_path(uri!["widgets"])
         .inject(f![db = Db::default()])
         // POST /widgets/new
-        .post_with(path!["new"], jsonr::<R![name: _, desc: _, count: _]>, new)
+        .post_with(uri!["new"], jsonr::<R![name: _, desc: _, count: _]>, new)
         // GET /widgets
         // GET /widgets?range=4..30
-        .get(path![? range: IdRange], list)
-        .path(path![id: u64])
+        .get(uri![? range: IdRange], list)
+        .path(uri![id: u64])
         // GET /widgets/:id
-        .get(path![], get)
+        .get(uri![], get)
         // PATCH /widgets/:id {"name": "blabla", "desc": null, "count": 40}
-        .patch_with(path![], jsonr::<R![name: _, desc: _, count: _]>, update)
+        .patch_with(uri![], jsonr::<R![name: _, desc: _, count: _]>, update)
         // DELETE /widgets/:id
-        .delete(path![], delete)
+        .delete(uri![], delete)
         .collapse();
 
     Server::bind(&([127, 0, 0, 1], 8080).into())

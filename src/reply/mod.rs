@@ -189,13 +189,13 @@ pub fn jsonr<'a, T: IsoEncode<'a>>(value: &'a T) -> Response {
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{f, path, r, reply, Ctx, R};
+/// use hyperbole::{f, r, reply, uri, Ctx, R};
 ///
 /// let _ctx = Ctx::default()
 ///     .map(|_: R![]| r!["this is my response"])
-///     .get(path!["i-want-my-str"], reply::extract::<&str>)
+///     .get(uri!["i-want-my-str"], reply::extract::<&str>)
 ///     .map(|_: R![]| r![foo = "here is fresh foo"])
-///     .get(path!["unhand-me-a-foo"], reply::extract::<f![foo]>);
+///     .get(uri!["unhand-me-a-foo"], reply::extract::<f![foo]>);
 /// ```
 pub async fn extract<T: Reply>(cx: R![T]) -> T {
     cx.head
@@ -228,13 +228,13 @@ impl Reply for FsError {
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{path, reply, App};
+/// use hyperbole::{reply, uri, App};
 ///
 /// let _app = App::new()
 ///     .not_found(reply::filesystem("/srv"))
 ///     .context()
-///     .get(path!["a" / "whatever.jpg"], reply::filesystem("/srv"))
-///     .get(path!["b" / *extra: String], reply::filesystem("/opt"))
+///     .get(uri!["a" / "whatever.jpg"], reply::filesystem("/srv"))
+///     .get(uri!["b" / *extra: String], reply::filesystem("/opt"))
 ///     .collapse();
 /// ```
 pub fn filesystem(base_path: &str) -> impl Fn(R![Method, Uri, HeaderMap]) -> FsFuture {
@@ -248,14 +248,14 @@ pub fn filesystem(base_path: &str) -> impl Fn(R![Method, Uri, HeaderMap]) -> FsF
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{path, r, reply, Ctx, R};
+/// use hyperbole::{r, reply, uri, Ctx, R};
 ///
 /// let _ctx = Ctx::default()
-///     // use a path! parser to extract `path: String` from the uri
-///     .get(path!["css" / *path: String], reply::filesystem_path("/srv"))
+///     // use a uri! parser to extract `path: String` from the uri
+///     .get(uri!["css" / *path: String], reply::filesystem_path("/srv"))
 ///     // or populate `path: String` in a middleware
 ///     .map(|cx: R![]| r![path = "an-image-file.jpg".to_owned()])
-///     .get(path!["image"], reply::filesystem_path("/srv"));
+///     .get(uri!["image"], reply::filesystem_path("/srv"));
 /// ```
 pub fn filesystem_path(
     base_path: &str,

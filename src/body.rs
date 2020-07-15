@@ -43,7 +43,7 @@ bad_request_display! { JsonBodyError }
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::json, path, record_args, Ctx};
+/// use hyperbole::{body::json, record_args, uri, Ctx};
 /// use serde::Deserialize;
 ///
 /// #[derive(Deserialize)]
@@ -59,10 +59,10 @@ bad_request_display! { JsonBodyError }
 ///
 /// let _ctx = Ctx::default()
 ///     // inline with get_with:
-///     .get_with(path!["the-thing"], json::<ThingRequest>, the_thing)
+///     .get_with(uri!["the-thing"], json::<ThingRequest>, the_thing)
 ///     // or as a middleware:
 ///     .try_then(json::<ThingRequest>)
-///     .get(path!["the-thing" / "via-mw"], the_thing);
+///     .get(uri!["the-thing" / "via-mw"], the_thing);
 /// ```
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
@@ -87,7 +87,7 @@ pub async fn json<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], JsonBodyEr
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::jsonr, path, record_args, Ctx, R};
+/// use hyperbole::{body::jsonr, record_args, uri, Ctx, R};
 ///
 /// #[record_args]
 /// async fn the_thing(x: u32, y: String, z: f64) -> &'static str {
@@ -96,10 +96,10 @@ pub async fn json<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], JsonBodyEr
 ///
 /// let _ctx = Ctx::default()
 ///     // inline with get_with:
-///     .get_with(path!["the-thing"], jsonr::<R![x: _, y: _, z: _]>, the_thing)
+///     .get_with(uri!["the-thing"], jsonr::<R![x: _, y: _, z: _]>, the_thing)
 ///     // or as a middleware:
 ///     .try_then(jsonr::<R![x: _, y: _]>)
-///     .get(path!["the-thing" / z: f64], the_thing);
+///     .get(uri!["the-thing" / z: f64], the_thing);
 /// ```
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
@@ -132,7 +132,7 @@ bad_request_display! { FormBodyError }
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::form, path, record_args, Ctx};
+/// use hyperbole::{body::form, record_args, uri, Ctx};
 /// use serde::Deserialize;
 ///
 /// #[derive(Deserialize)]
@@ -148,10 +148,10 @@ bad_request_display! { FormBodyError }
 ///
 /// let _ctx = Ctx::default()
 ///     // inline with get_with:
-///     .get_with(path!["the-thing"], form::<ThingRequest>, the_thing)
+///     .get_with(uri!["the-thing"], form::<ThingRequest>, the_thing)
 ///     // or as a middleware:
 ///     .try_then(form::<ThingRequest>)
-///     .get(path!["the-thing" / "via-mw"], the_thing);
+///     .get(uri!["the-thing" / "via-mw"], the_thing);
 /// ```
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
@@ -176,7 +176,7 @@ pub async fn form<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], FormBodyEr
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::formr, path, record_args, Ctx, R};
+/// use hyperbole::{body::formr, record_args, uri, Ctx, R};
 ///
 /// #[record_args]
 /// async fn the_thing(x: u32, y: String, z: f64) -> &'static str {
@@ -185,10 +185,10 @@ pub async fn form<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], FormBodyEr
 ///
 /// let _ctx = Ctx::default()
 ///     // inline with get_with:
-///     .get_with(path!["the-thing"], formr::<R![x: _, y: _, z: _]>, the_thing)
+///     .get_with(uri!["the-thing"], formr::<R![x: _, y: _, z: _]>, the_thing)
 ///     // or as a middleware:
 ///     .try_then(formr::<R![x: _, y: _]>)
-///     .get(path!["the-thing" / z: f64], the_thing);
+///     .get(uri!["the-thing" / z: f64], the_thing);
 /// ```
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
@@ -234,7 +234,7 @@ bad_request_display! { AutoBodyError }
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::auto, path, record_args, Ctx};
+/// use hyperbole::{body::auto, record_args, uri, Ctx};
 /// use serde::Deserialize;
 ///
 /// #[derive(Deserialize)]
@@ -250,10 +250,10 @@ bad_request_display! { AutoBodyError }
 ///
 /// let _ctx = Ctx::default()
 ///     // inline with get_with:
-///     .get_with(path!["the-thing"], auto::<ThingRequest>, the_thing)
+///     .get_with(uri!["the-thing"], auto::<ThingRequest>, the_thing)
 ///     // or as a middleware:
 ///     .try_then(auto::<ThingRequest>)
-///     .get(path!["the-thing" / "via-mw"], the_thing);
+///     .get(uri!["the-thing" / "via-mw"], the_thing);
 /// ```
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
@@ -295,7 +295,7 @@ where T: DeserializeOwned {
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::autor, path, record_args, Ctx, R};
+/// use hyperbole::{body::autor, record_args, uri, Ctx, R};
 ///
 /// #[record_args]
 /// async fn the_thing(x: u32, y: String, z: f64) -> &'static str {
@@ -304,10 +304,10 @@ where T: DeserializeOwned {
 ///
 /// let _ctx = Ctx::default()
 ///     // inline with get_with:
-///     .get_with(path!["the-thing"], autor::<R![x: _, y: _, z: _]>, the_thing)
+///     .get_with(uri!["the-thing"], autor::<R![x: _, y: _, z: _]>, the_thing)
 ///     // or as a middleware:
 ///     .try_then(autor::<R![x: _, y: _]>)
-///     .get(path!["the-thing" / z: f64], the_thing);
+///     .get(uri!["the-thing" / z: f64], the_thing);
 /// ```
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with

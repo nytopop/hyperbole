@@ -11,10 +11,10 @@ use percent_encoding::percent_decode_str;
 use std::{borrow::Cow, cmp, error::Error, fmt, marker::PhantomData, mem, ops::Add, str::FromStr};
 use thiserror::Error;
 
-/// Expands to a well-typed path specification.
+/// Expands to a well-typed uri specification.
 ///
 /// # Routable segments
-/// A [path!] invocation may contain any number of static or dynamic segments separated by
+/// A [uri!] invocation may contain any number of static or dynamic segments separated by
 /// forward slashes. Static segments are literal strings and must be matched verbatim when a
 /// request comes in, while dynamic segments will match regardless of their content and are
 /// *parsed* (via a [FromStr][fromstr] impl) after a route has been matched.
@@ -23,45 +23,45 @@ use thiserror::Error;
 /// determined by the [FromStr::Err][std::str::FromStr::Err].
 ///
 /// ```
-/// use hyperbole::path;
+/// use hyperbole::uri;
 ///
 /// // /
-/// path![];
+/// uri![];
 ///
 /// // /one
-/// path!["one"];
+/// uri!["one"];
 /// // /two
-/// path!["one" / "two"];
+/// uri!["one" / "two"];
 ///
 /// // /:one
-/// path![one: u32];
+/// uri![one: u32];
 /// // /:one/:two
-/// path![one: u32 / two: f64];
+/// uri![one: u32 / two: f64];
 ///
 /// // /one/:two/three
-/// path!["one" / two: String / "three"];
+/// uri!["one" / two: String / "three"];
 /// ```
 ///
-/// A catch-all segment may optionally be added to the end of a [path!] to match the rest of
+/// A catch-all segment may optionally be added to the end of a [uri!] to match the rest of
 /// an incoming request's path with the same syntax as a dynamic segment, except preceded by
 /// a `*`. Like dynamic segments, a name and type must be specified, where the type implements
 /// [FromStr][fromstr].
 ///
 /// ```
-/// use hyperbole::path;
+/// use hyperbole::uri;
 ///
 /// // /*any
-/// path![*any: String];
+/// uri![*any: String];
 ///
 /// // /one/*everything_else
-/// path!["one" / *everything_else: String];
+/// uri!["one" / *everything_else: String];
 /// ```
 ///
 /// Within an [App], routes must be uniquely determinable. That is, for any request, exactly
 /// one or zero routes will match, *always*. Ambiguous routes are not permitted.
 ///
 /// # Query parameters
-/// Query parameters may be added to the end of a [path!], but do not affect routing. They are
+/// Query parameters may be added to the end of a [uri!], but do not affect routing. They are
 /// similar to dynamic segments in that they are parsed by a [FromStr][fromstr] impl after a
 /// request matches a route.
 ///
@@ -73,23 +73,23 @@ use thiserror::Error;
 /// path specification, the [FromStr] impl will receive an empty string `""` during parsing.
 ///
 /// ```
-/// use hyperbole::path;
+/// use hyperbole::uri;
 ///
-/// path![? p1: u8];
-/// path!["abc" ? p1: u8, p2: String];
-/// path!["one" / two: u32 / *three: String ? param: usize, another: f64];
+/// uri![? p1: u8];
+/// uri!["abc" ? p1: u8, p2: String];
+/// uri!["one" / two: u32 / *three: String ? param: usize, another: f64];
 /// ```
 ///
 /// # Interaction with request scoped state
-/// Any parameters in a [path!] invocation are exposed as [named fields][field::Field].
+/// Any parameters in a [uri!] invocation are exposed as [named fields][field::Field].
 ///
 /// After parsing completes, said fields will be merged with any other request scoped state.
 ///
 /// [fromstr]: std::str::FromStr
 #[macro_export]
-macro_rules! path {
+macro_rules! uri {
     ($( $token:tt )*) => {
-        $crate::__path_internal![
+        $crate::__uri_internal![
             [$crate::tree::PathSpec::ROOT]
             $( $token )*
         ]
@@ -98,7 +98,7 @@ macro_rules! path {
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __path_internal {
+macro_rules! __uri_internal {
     ([$spec:expr]) => {
         $spec
     };
@@ -115,7 +115,7 @@ macro_rules! __path_internal {
 
     // 1 static seg and at least 1 segment
     ([$spec:expr] $segment:literal / $( $token:tt )+) => {
-        $crate::__path_internal![
+        $crate::__uri_internal![
             [($spec).segment($segment)]
             $( $token )+
         ]
@@ -123,7 +123,7 @@ macro_rules! __path_internal {
 
     // 1 static seg and at least 1 query param
     ([$spec:expr] $segment:literal ? $( $q_name:ident : $q_type:ty ),+) => {
-        $crate::__path_internal![
+        $crate::__uri_internal![
             [($spec).segment($segment)]
             ? $( $q_name : $q_type ),+
         ]
@@ -136,7 +136,7 @@ macro_rules! __path_internal {
 
     // 1 dynamic seg and at least 1 segment
     ([$spec:expr] $name:ident : $type:tt / $( $token:tt )+) => {
-        $crate::__path_internal![
+        $crate::__uri_internal![
             [($spec).dynamic::<$crate::f![$name : $type]>(stringify!($name))]
             $( $token )+
         ]
@@ -144,7 +144,7 @@ macro_rules! __path_internal {
 
     // 1 dynamic seg and at least 1 query param
     ([$spec:expr] $name:ident : $type:tt ? $( $q_name:ident : $q_type:ty ),+) => {
-        $crate::__path_internal![
+        $crate::__uri_internal![
             [($spec).dynamic::<$crate::f![$name : $type]>(stringify!($name))]
             ? $( $q_name : $q_type ),+
         ]
@@ -164,7 +164,7 @@ macro_rules! __path_internal {
 
     // 1 catch-all and at least 1 query param
     ([$spec:expr] *$name:ident : $type:tt ? $( $q_name:ident : $q_type:ty ),+) => {
-        $crate::__path_internal![
+        $crate::__uri_internal![
             [($spec).catch_all::<$crate::f![$name : $type]>(stringify!($name))]
             ? $( $q_name : $q_type ),+
         ]
@@ -211,8 +211,8 @@ pub(super) type Parsed<P> = Result<P, <P as Parser<Segment>>::Error>;
 #[doc(hidden)]
 pub type Params<P> = HCons<Parsed<P>, HNil>;
 
-/// The empty hlist satisfies any kind of parser impl, because in either case it doesn't
-/// have to do any parsing.
+/// The empty hlist satisfies any kind of parser impl, because in either case it doesn't have to
+/// do any parsing.
 impl<Kind> Parser<Kind> for HNil {
     type Error = CNil;
 
@@ -222,8 +222,8 @@ impl<Kind> Parser<Kind> for HNil {
     }
 }
 
-/// A plain hlist (without nested parse results) is a `Segment` parser, meaning it can parse
-/// a series of `FromStr` segments.
+/// A plain hlist (without nested parse results) is a `Segment` parser, meaning it can parse a
+/// series of `FromStr` segments.
 impl<Head, Tail> Parser<Segment> for HCons<Head, Tail>
 where
     Head: FromStr,
@@ -291,7 +291,7 @@ enum Kind {
 
 /// A uri specification and well-typed parameter parser.
 ///
-/// See the [path!] macro for usage details.
+/// See the [uri!] macro for usage details.
 #[repr(C)]
 pub struct PathSpec<P> {
     segs: Vec<UriSeg>,
@@ -306,19 +306,19 @@ impl<P> Clone for PathSpec<P> {
 
 impl<P> fmt::Display for PathSpec<P> {
     /// ```
-    /// use hyperbole::path;
+    /// use hyperbole::uri;
     /// use std::fmt::Display;
     ///
     /// fn eq<D: Display>(a: &str, b: D) {
     ///     assert_eq!(a, format!("{}", b));
     /// }
     ///
-    /// eq("/", path![]);
-    /// eq("/", path![? p1: u8]);
-    /// eq("/one/:two/three", path!["one" / two: u32 / "three"]);
-    /// eq("/one/:two/three", path!["one" / two: u32 / "three" ? p1: u8]);
-    /// eq("/one/:two/*three", path!["one" / two: u32 / *three: String]);
-    /// eq("/one/:two/*three", path!["one" / two: u32 / *three: String ? p1: u8]);
+    /// eq("/", uri![]);
+    /// eq("/", uri![? p1: u8]);
+    /// eq("/one/:two/three", uri!["one" / two: u32 / "three"]);
+    /// eq("/one/:two/three", uri!["one" / two: u32 / "three" ? p1: u8]);
+    /// eq("/one/:two/*three", uri!["one" / two: u32 / *three: String]);
+    /// eq("/one/:two/*three", uri!["one" / two: u32 / *three: String ? p1: u8]);
     /// ```
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "/")?;
@@ -922,58 +922,58 @@ fn find_wildcard(path: &str) -> Option<(usize, &str, bool)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        super::{path, zoom},
+        super::{uri, zoom},
         *,
     };
     use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
     use quickcheck_macros::quickcheck;
 
     #[test]
-    fn test_valid_path_macro_combinations() {
+    fn test_valid_uri_macro_combinations() {
         // only static segments
-        path!["one"];
-        path!["one" / "two"];
+        uri!["one"];
+        uri!["one" / "two"];
 
         // only dynamic segments
-        path![one: u32];
-        path![one: u32 / two: u32];
+        uri![one: u32];
+        uri![one: u32 / two: u32];
 
         // only catch-all segment
-        path![*one: String];
+        uri![*one: String];
 
         // only query params
-        path![? p1: u32];
-        path![? p1: u32, p2: u32];
+        uri![? p1: u32];
+        uri![? p1: u32, p2: u32];
 
         // static + dynamic segments
-        path!["one" / two: u32];
-        path![one: u32 / "two"];
+        uri!["one" / two: u32];
+        uri![one: u32 / "two"];
 
         // static + catch-all segments
-        path!["one" / *two: String];
-        path!["one" / "two" / *three: String];
+        uri!["one" / *two: String];
+        uri!["one" / "two" / *three: String];
 
         // dynamic + catch-all segments
-        path![one: u32 / *two: String];
-        path![one: u32 / two: u32 / *three: String];
+        uri![one: u32 / *two: String];
+        uri![one: u32 / two: u32 / *three: String];
 
         // static segments + query params
-        path!["one" ? p1: u32];
-        path!["one" / "two" ? p1: u8, p2: u8];
+        uri!["one" ? p1: u32];
+        uri!["one" / "two" ? p1: u8, p2: u8];
 
         // dynamic segments + query params
-        path![one: u32 ? p1: u32];
-        path![one: u8 / two: u8 ? p1: u8, p2: u8];
+        uri![one: u32 ? p1: u32];
+        uri![one: u8 / two: u8 ? p1: u8, p2: u8];
 
         // catch-all segment + query params
-        path![*one: String ? p1: u8];
-        path![*one: String ? p1: u8, p2:u8];
+        uri![*one: String ? p1: u8];
+        uri![*one: String ? p1: u8, p2:u8];
 
         // static + dynamic + catch-all segments + query params
-        path![one: u32 / "two" / *three: String ? p1: u8];
-        path![one: u32 / "two" / *three: String ? p1: u8, p2: u8];
-        path!["one" / two: u32 / *three: String ? p1: u8];
-        path!["one" / two: u32 / *three: String ? p1: u8, p2: u8];
+        uri![one: u32 / "two" / *three: String ? p1: u8];
+        uri![one: u32 / "two" / *three: String ? p1: u8, p2: u8];
+        uri!["one" / two: u32 / *three: String ? p1: u8];
+        uri!["one" / two: u32 / *three: String ? p1: u8, p2: u8];
     }
 
     fn parse_params<P>(spec: &PathSpec<P>, path: &str, query: Option<&str>) -> Parsed<P>
@@ -990,7 +990,7 @@ mod tests {
         let encoded = utf8_percent_encode(&y, NON_ALPHANUMERIC);
         let path = format!("/abc/{}/cba/{}", x, encoded);
 
-        let p = path!["abc" / x: u32 / "cba" / y: String];
+        let p = uri!["abc" / x: u32 / "cba" / y: String];
         let ps = parse_params(&p, &path, None).unwrap();
 
         assert_eq!(*zoom!(&ps.x), x);
@@ -1002,7 +1002,7 @@ mod tests {
         let encoded = utf8_percent_encode(&rest, NON_ALPHANUMERIC);
         let path = format!("/abc/{}/{}", x, encoded);
 
-        let p = path!["abc" / x: u32 / *rest: String];
+        let p = uri!["abc" / x: u32 / *rest: String];
         let ps = parse_params(&p, &path, None).unwrap();
 
         assert_eq!(*zoom!(&ps.x), x);
@@ -1012,13 +1012,13 @@ mod tests {
     #[quickcheck]
     fn test_parse_query_params(a: u8, b: u32, c: String) {
         let q = format!("p1={}", a);
-        let spec = path![? p1: u8];
+        let spec = uri![? p1: u8];
         let ps = parse_params(&spec, "/", Some(&q)).unwrap();
         assert_eq!(*zoom!(&ps.p1), a);
 
         let encoded = utf8_percent_encode(&c, NON_ALPHANUMERIC);
         let q = format!("p1={}&p2={}", b, encoded);
-        let spec = path![? p1: u32, p2: String];
+        let spec = uri![? p1: u32, p2: String];
         let ps = parse_params(&spec, "/", Some(&q)).unwrap();
         assert_eq!(*zoom!(&ps.p1), b);
         assert_eq!(*zoom!(&ps.p2), c);

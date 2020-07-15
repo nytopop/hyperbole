@@ -6,19 +6,19 @@ fn test_modify_uri_parser_after_erasure() {
     let _ = Ctx::default()
         .map(|_: R![Body]| r![])
         .map(|_: R![]| r![foo = 40u64])
-        .path(path![bar: u32])
+        .path(uri![bar: u32])
         .map(|_: R![bar: _, foo: _]| r![]);
 
     let _ = Ctx::default()
         .inject(f![x = 40])
         .map(|_: R![x: _]| r![])
-        .path(path![y: u32])
+        .path(uri![y: u32])
         .map(|_: R![y: _]| r![]);
 
     let _ = Ctx::default()
         .map(|_: R![]| r![x = 40])
         .map(|cx: R![x: _]| cx)
-        .path(path![y: u32])
+        .path(uri![y: u32])
         .map(|_: R![y: _]| r![]);
 }
 
@@ -30,8 +30,8 @@ async fn test_basic_uri_parsing() {
     }
 
     let app = App::new()
-        .context_path(path![x: u32 / y: f64])
-        .get(path![], handle)
+        .context_path(uri![x: u32 / y: f64])
+        .get(uri![], handle)
         .collapse()
         .test_client();
 
@@ -63,17 +63,17 @@ async fn test_route_dispatch_with_ctx_val() {
     let app = App::new()
         .context()
         .map(|_: R![]| r![val = 0])
-        .get(path!["a"], handle)
+        .get(uri!["a"], handle)
         .map(|_: R![val: _]| r![val = 1])
-        .get(path!["b"], handle)
+        .get(uri!["b"], handle)
         .map(|_: R![val: _]| r![val = 2])
-        .get(path!["c"], handle)
+        .get(uri!["c"], handle)
         .map(|_: R![val: _]| r![val = 3])
-        .get(path!["d"], handle)
+        .get(uri!["d"], handle)
         .map(|_: R![val: _]| r![val = 4])
-        .get(path!["e"], handle)
+        .get(uri!["e"], handle)
         .map(|_: R![val: _]| r![val = 5])
-        .get(path!["f"], handle)
+        .get(uri!["f"], handle)
         .collapse()
         .test_client();
 

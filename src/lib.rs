@@ -166,15 +166,15 @@ pub type Init = R![
 /// # Examples
 /// ```no_run
 /// use hyper::{server::Server, Body};
-/// use hyperbole::{path, App, R};
+/// use hyperbole::{uri, App, R};
 ///
 /// #[tokio::main]
 /// async fn main() -> hyper::Result<()> {
 ///     let app = App::new()
-///         .context_path(path!["first" / param: u32])
+///         .context_path(uri!["first" / param: u32])
 ///         .map(|cx: R![param: _]| cx)
 ///         // GET /first/:param/echo
-///         .get(path!["echo"], |cx: R![param: _, Body]| async move {
+///         .get(uri!["echo"], |cx: R![param: _, Body]| async move {
 ///             let (param, body) = cx.into();
 ///             format!("param: {}, body: {:?}", param, body)
 ///         })
@@ -239,21 +239,21 @@ impl App {
     /// Begin a new request context at the provided base path. Any parameters parsed from the
     /// uri will be merged into the context's state.
     ///
-    /// The [path!] macro can be used to construct an appropriate [`PathSpec`].
+    /// The [uri!] macro can be used to construct an appropriate [`PathSpec`].
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, App};
+    /// use hyperbole::{uri, App};
     ///
     /// let _app = App::new()
     ///     // begin at /
-    ///     .context_path(path![])
+    ///     .context_path(uri![])
     ///     .collapse()
     ///     // begin at /abc
-    ///     .context_path(path!["abc"])
+    ///     .context_path(uri!["abc"])
     ///     .collapse()
     ///     // begin at /xyz/:param
-    ///     .context_path(path!["xyz" / param: u32])
+    ///     .context_path(uri!["xyz" / param: u32])
     ///     .collapse();
     /// ```
     pub fn context_path<P: HList + Parser<Segment> + Send>(
@@ -297,7 +297,7 @@ impl App {
         End<Base, F, Args, Ix>: Link<Init, HNil, Output = Response, Params = HNil> + 'static,
     {
         let chain: Chain<HNil, End<Base, F, Args, Ix>> =
-            Chain::new(path![]).link_next(|link| End::new(link, handler));
+            Chain::new(uri![]).link_next(|link| End::new(link, handler));
 
         self.not_found = Box::new(chain);
         self
@@ -375,11 +375,11 @@ impl App {
     /// This method panics if any routes in `routes` conflict with a route in the [App].
     ///
     /// ```should_panic
-    /// use hyperbole::{path, App, Ctx, R};
+    /// use hyperbole::{uri, App, Ctx, R};
     ///
     /// let routes = Ctx::default()
-    ///     .get(path!["conflict"], |_: R![]| async { "" })
-    ///     .get(path!["conflict"], |_: R![]| async { "" })
+    ///     .get(uri!["conflict"], |_: R![]| async { "" })
+    ///     .get(uri!["conflict"], |_: R![]| async { "" })
     ///     .into_routes();
     ///
     /// // 'a handler is already registered for path "/conflict"'
@@ -387,11 +387,11 @@ impl App {
     /// ```
     ///
     /// ```should_panic
-    /// use hyperbole::{path, App, Ctx, R};
+    /// use hyperbole::{uri, App, Ctx, R};
     ///
     /// let routes = Ctx::default()
-    ///     .get(path!["something"], |_: R![]| async { "" })
-    ///     .get(path![param: u32], |_: R![]| async { "" })
+    ///     .get(uri!["something"], |_: R![]| async { "" })
+    ///     .get(uri![param: u32], |_: R![]| async { "" })
     ///     .into_routes();
     ///
     /// // 'wildcard ":param" conflicts with existing children in path "/:param"'
@@ -457,27 +457,27 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// [Reply].
 ///
 /// ```
-/// use hyperbole::{path, r, Ctx, R};
+/// use hyperbole::{r, uri, Ctx, R};
 ///
 /// let _ctx = Ctx::default()
 ///     .map(|_: R![]| r!["hello worldo"])
 ///     // only the above `map` is executed before this handler
-///     .get(path!["some-route"], |cx: R![&str]| async move {
+///     .get(uri!["some-route"], |cx: R![&str]| async move {
 ///         format!("message: {:?}", cx.head)
 ///     })
 ///     .map(|_: R![]| r![3.14159])
 ///     // but this handler is preceded by both `map`s
-///     .get(path!["another"], |cx: R![&str, f64]| async move {
+///     .get(uri!["another"], |cx: R![&str, f64]| async move {
 ///         format!("message: {:?}, number: {}", cx.head, cx.tail.head)
 ///     });
 /// ```
 ///
 /// # Parsing request uris
-/// Parameters in uris can be described with the [path!] macro. Much like middlewares, path parsers
+/// Parameters in uris can be described with the [uri!] macro. Much like middlewares, path parsers
 /// merge new elements into the request scoped state.
 ///
 /// ```
-/// use hyperbole::{path, r, record_args, Ctx, R};
+/// use hyperbole::{r, record_args, uri, Ctx, R};
 ///
 /// #[derive(Debug)]
 /// struct Widget;
@@ -488,9 +488,9 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// }
 ///
 /// let _widget_ctx = Ctx::default()
-///     .path(path!["widgets" / widget_id: u64])
+///     .path(uri!["widgets" / widget_id: u64])
 ///     .map(retrieve_widget)
-///     .get(path!["show"], |cx: R![Widget]| async move {
+///     .get(uri!["show"], |cx: R![Widget]| async move {
 ///         format!("{:?}", cx.head)
 ///     });
 /// ```
@@ -507,7 +507,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// maps over a single variant.
 ///
 /// ```
-/// use hyperbole::{path, record_args, tree::UriError, Ctx, R};
+/// use hyperbole::{record_args, tree::UriError, uri, Ctx, R};
 /// use std::num::ParseIntError;
 ///
 /// #[derive(Debug)]
@@ -519,7 +519,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// }
 ///
 /// let _widget_ctx = Ctx::default()
-///     .path(path!["widgets" / widget_id: u64])
+///     .path(uri!["widgets" / widget_id: u64])
 ///     .try_map(retrieve_widget)
 ///     .map_err(|e: UriError<ParseIntError>| {
 ///         println!("failed to parse {:?} as a u64: {}", e.item, e.err);
@@ -529,7 +529,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///         println!("failed to retrieve widget: {}", e);
 ///         e
 ///     })
-///     .get(path!["show"], |cx: R![Widget]| async move {
+///     .get(uri!["show"], |cx: R![Widget]| async move {
 ///         format!("{:?}", cx.head)
 ///     });
 /// ```
@@ -559,7 +559,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// ```
 ///
 /// [Named fields] can be used to disambiguate between what would otherwise be duplicate types. In
-/// particular, the [path!] macro takes advantage of this to allow multiple instances of common
+/// particular, the [uri!] macro takes advantage of this to allow multiple instances of common
 /// primitive types like `u32` or `String` to be extracted from a uri.
 ///
 /// The above example can be rewritten using named fields to avoid the inference failure:
@@ -668,7 +668,7 @@ impl<S> Ctx<HNil, Base, S> {
         Self {
             source,
             routes: vec![],
-            chain: Chain::new(path![]),
+            chain: Chain::new(uri![]),
         }
     }
 }
@@ -677,13 +677,13 @@ impl<P: HList + Send + Parser<Segment>> Ctx<Params<P>, Path<Base, P, Here>> {
     /// Create a new request context at the provided base path. Any parameters parsed from the
     /// uri will be merged into the context's state.
     ///
-    /// The [path!] macro can be used to construct an appropriate [`PathSpec`].
+    /// The [uri!] macro can be used to construct an appropriate [`PathSpec`].
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, r, Ctx, R};
+    /// use hyperbole::{r, uri, Ctx, R};
     ///
-    /// let _ctx = Ctx::with_path(path!["foo" / "bar" / baz: f64])
+    /// let _ctx = Ctx::with_path(uri!["foo" / "bar" / baz: f64])
     ///     .map(|cx: R![baz: _]| r![qux = *cx.head > 3.14159265])
     ///     .map(|cx: R![qux: _]| cx);
     /// ```
@@ -809,9 +809,9 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, zoom, Ctx, R};
+    /// use hyperbole::{uri, zoom, Ctx, R};
     ///
-    /// let _ctx = Ctx::with_path(path![a: u32 / b: u32])
+    /// let _ctx = Ctx::with_path(uri![a: u32 / b: u32])
     ///     .try_map(|cx: R![a: _, b: _]| match zoom!(&cx.a) > zoom!(&cx.b) {
     ///         false => Err("uh oh"),
     ///         true => Ok(cx),
@@ -885,9 +885,9 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, r, Ctx, R};
+    /// use hyperbole::{r, uri, Ctx, R};
     ///
-    /// let _ctx = Ctx::with_path(path![a: f64 / b: String])
+    /// let _ctx = Ctx::with_path(uri![a: f64 / b: String])
     ///     .try_then(|cx: R![a: f64, b: String]| async move {
     ///         let (a, b) = cx.into();
     ///         if *a == 3.14159265 && *b != "blue" {
@@ -974,7 +974,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// Append additional path segments to this context's base path. Any new parameters parsed from
     /// the uri will be merged into the context's state at this point.
     ///
-    /// The [path!] macro can be used to construct an appropriate [`PathSpec`].
+    /// The [uri!] macro can be used to construct an appropriate [`PathSpec`].
     ///
     /// When a request is being handled, the concatenated path specification is parsed before any
     /// middlewares execute. However, all extracted parameters (and parsing errors) are deferred
@@ -982,17 +982,17 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, tree::UriError, Ctx, R};
+    /// use hyperbole::{tree::UriError, uri, Ctx, R};
     /// use std::num::ParseFloatError;
     ///
     /// let _ctx = Ctx::default()
-    ///     .path(path!["first" / x: usize / y: f64])
+    ///     .path(uri!["first" / x: usize / y: f64])
     ///     .map(|cx: R![x: _]| cx)
     ///     .map_err(|e: UriError<ParseFloatError>| e.item)
     ///     .map(|cx: R![y: _]| cx)
     ///     .map(|cx: R![x: _, y: _]| cx)
     ///     // GET /first/:x/:y/abc
-    ///     .get(path!["abc"], |cx: R![x: _, y: _]| async { "" });
+    ///     .get(uri!["abc"], |cx: R![x: _, y: _]| async { "" });
     /// ```
     pub fn path<_P, Ix>(self, spec: PathSpec<_P>) -> Ctx<Add2<P, Params<_P>>, Path<L, _P, Ix>, S>
     where
@@ -1022,7 +1022,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// # Examples
     /// ```
     /// use hyper::Body;
-    /// use hyperbole::{path, r, record_args, reply::Reply, Ctx, R};
+    /// use hyperbole::{r, record_args, reply::Reply, uri, Ctx, R};
     ///
     /// #[record_args]
     /// async fn doit(baz: f64) -> &'static str {
@@ -1037,13 +1037,13 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///     vec![1, 2, 3, 4, 5]
     /// }
     ///
-    /// let _ctx = Ctx::with_path(path!["foo" / "bar" / baz: f64])
-    ///     .get(path!["doit"], doit)
+    /// let _ctx = Ctx::with_path(uri!["foo" / "bar" / baz: f64])
+    ///     .get(uri!["doit"], doit)
     ///     .map(|cx: R![baz: _]| r![15])
-    ///     .get(path!["more" / neat: u32], more)
-    ///     .get(path!["more"], more)
-    ///     .get(path!["more" / neat: u32 / "nested"], more)
-    ///     .get(path!["impl_reply"], using_impl);
+    ///     .get(uri!["more" / neat: u32], more)
+    ///     .get(uri!["more"], more)
+    ///     .get(uri!["more" / neat: u32 / "nested"], more)
+    ///     .get(uri!["impl_reply"], using_impl);
     /// ```
     pub fn handle<_P, F, Args, Ix, Pix, Fut, Resp>(
         mut self,
@@ -1091,15 +1091,15 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{body::jsonr, path, Ctx, R};
+    /// use hyperbole::{body::jsonr, uri, Ctx, R};
     ///
     /// async fn handle_abc(cx: R![a: u32, b: String, c: f64]) -> &'static str {
     ///     "neat"
     /// }
     ///
     /// let _app = Ctx::default()
-    ///     .get_with(path!["1" / a: u32], jsonr::<R![b: _, c: _]>, handle_abc)
-    ///     .get_with(path!["2" / a: u32], jsonr::<R![b: _, c: _]>, handle_abc);
+    ///     .get_with(uri!["1" / a: u32], jsonr::<R![b: _, c: _]>, handle_abc)
+    ///     .get_with(uri!["2" / a: u32], jsonr::<R![b: _, c: _]>, handle_abc);
     /// ```
     ///
     /// [handle]: Ctx::handle
@@ -1167,24 +1167,24 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L, App> {
     /// eachother or any routes in the [App].
     ///
     /// ```should_panic
-    /// use hyperbole::{path, App, R};
+    /// use hyperbole::{uri, App, R};
     ///
     /// // 'a handler is already registered for path "/conflict"'
     /// let _app = App::new()
     ///     .context()
-    ///     .get(path!["conflict"], |_: R![]| async { "" })
-    ///     .get(path!["conflict"], |_: R![]| async { "" })
+    ///     .get(uri!["conflict"], |_: R![]| async { "" })
+    ///     .get(uri!["conflict"], |_: R![]| async { "" })
     ///     .collapse();
     /// ```
     ///
     /// ```should_panic
-    /// use hyperbole::{path, App, R};
+    /// use hyperbole::{uri, App, R};
     ///
     /// // 'wildcard ":param" conflicts with existing children in path "/:param"'
     /// let _app = App::new()
     ///     .context()
-    ///     .get(path!["something"], |_: R![]| async { "" })
-    ///     .get(path![param: u32], |_: R![]| async { "" })
+    ///     .get(uri!["something"], |_: R![]| async { "" })
+    ///     .get(uri![param: u32], |_: R![]| async { "" })
     ///     .collapse();
     /// ```
     ///
