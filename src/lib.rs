@@ -423,130 +423,123 @@ fn method_idx(m: &Method) -> Option<usize> {
 
 /// A request processing context.
 ///
-/// It can be thought of as a composable chain of partial transformations over an hlist of
-/// request scoped values; a lazily declarative specification of 'how to process a request'.
+/// In effect, this represents a cumulative builder-pattern constructor for request handlers.
 ///
-/// Much like [Iterator], a context by itself doesn't really *do* anything (it is dropped by
-/// the time requests are being processed). It exists only to construct request handlers for
-/// registration as routes in an [App].
+/// # Strongly typed request scoped state
+/// The core abstraction used within this struct is an hlist of request scoped state paired with a
+/// composable chain of middlewares that transform it.
 ///
-/// Each context tracks two hlists and a combinator chain that transforms them:
-///
-/// 1. An hlist generated from incoming http request parts.
-/// 2. An hlist of parameters parsed from request uris.
-///
-/// See [Init] for the exact set of initial state available in fresh contexts.
-///
-/// When a request is matched, these are all merged and fed into the chain of combinators to
-/// be transformed before being passed into an eventual handler.
-///
-/// Combinators may move arbitrary subsets of the context's request scoped state, and return
-/// arbitrary sets of state to merge for later combinators to use. In this way, the data
-/// dependencies between middlewares / handlers can be expressed at compile time, without
-/// introducing unnecessary coupling between components that are logically unrelated.
+/// Each [Ctx] state starts life as an [Init], and is modified through successive application of
+/// various middleware combinators (such as [map], [then], [try_map], [path], etc).
 ///
 /// ```
-/// use hyper::Body;
-/// use hyperbole::{r, Ctx, R};
+/// use hyper::Uri;
+/// use hyperbole::{Ctx, R, r};
 ///
-/// #[derive(Copy, Clone)]
-/// struct DbHandle;
-///
-/// struct A;
-/// struct B;
-///
-/// let _ctx = Ctx::with_state(r![DbHandle])
-///     // move nothing, and return nothing to be merged
+/// let _ctx = Ctx::default()
+///     // a no-op middleware which doesn't modify the state
 ///     .map(|cx: R![]| cx)
-///     // move req body, but merge it back
-///     .map(|cx: R![Body]| cx)
-///     // move req body, and merge an A and B
-///     .map(|cx: R![Body]| r![A, B])
-///     // subset ordering doesn't matter
-///     .map(|cx: R![B, DbHandle, A]| cx)
-///     .then(|cx: R![A]| async { cx })
-///     .map(|cx: R![A, B]| cx)
-///     .then(|cx: R![B]| async { cx });
+///     // a middleware that adds a `usize` to the state, based on the uri
+///     .map(|cx: R![Uri]| r![cx.head.path().len(), ...cx])
+///     // a middlware that consumes the uri, and adds nothing
+///     .map(|cx: R![Uri]| r![]);
 /// ```
 ///
-/// At any point in a context chain, a handler can be registered by calling [handle] or one
-/// of its analogues (ex: [get], [post]). Like middleware combinators, handlers move a subset
-/// of the request scoped state into themselves, but instead of returning more state to merge
-/// they return a value that implements [Reply].
+/// # Handling requests
+/// At any point, a handler function may be registered for a given route. The handler will execute
+/// after any middlewares that have been composed prior to it, and will likewise have access to any
+/// of the accumulated state.
+///
+/// New middlewares do not retroactively apply to handlers that have already been registered. Only
+/// the middlewares logically prior to a handler's registration will be folded into that handler.
+///
+/// Unlike middlewares - which return new state - handlers should return a value which implements
+/// [Reply].
 ///
 /// ```
-/// use hyper::Body;
-/// use hyperbole::{path, record_args, zoom, Ctx, R};
+/// use hyperbole::{path, r, Ctx, R};
 ///
-/// let _ctx = Ctx::with_path(path![dynamic: u32])
-///     // GET /:dynamic/echo_req
-///     .get(path!["echo_req"], |cx: R![Body]| async move {
-///         // hlists can be converted into tuples
-///         let (body,) = cx.into();
-///         format!("echo: {:?}", body)
+/// let _ctx = Ctx::default()
+///     .map(|_: R![]| r!["hello worldo"])
+///     // only the above `map` is executed before this handler
+///     .get(path!["some-route"], |cx: R![&str]| async move {
+///         format!("message: {:?}", cx.head)
 ///     })
-///     // GET /:dynamic/tell_dynamic
-///     .get(path!["tell_dynamic"], |cx: R![dynamic: _]| async move {
-///         // or use the zoom! macro for named fields
-///         format!("dynamic is {}", zoom!(&cx.dynamic))
-///     })
-///     .path(path!["all" / "the" / "subpaths"])
-///     // GET /:dynamic/all/the/subpaths/discrete
-///     .get(path!["discrete"], fn_handler);
+///     .map(|_: R![]| r![3.14159])
+///     // but this handler is preceded by both `map`s
+///     .get(path!["another"], |cx: R![&str, f64]| async move {
+///         format!("message: {:?}, number: {}", cx.head, cx.tail.head)
+///     });
+/// ```
 ///
-/// // or use the record_args attribute to reduce boilerplate
+/// # Parsing request uris
+/// Parameters in uris can be described with the [path!] macro. Much like middlewares, path parsers
+/// merge new elements into the request scoped state.
+///
+/// ```
+/// use hyperbole::{path, r, record_args, Ctx, R};
+///
+/// #[derive(Debug)]
+/// struct Widget;
+///
 /// #[record_args]
-/// async fn fn_handler(dynamic: u32, _body: Body) -> &'static [u8] {
-///     println!("dynamic: {}", dynamic);
-///     println!("reqbody: {:?}", _body);
-///
-///     b"here's an octet-stream"
+/// fn retrieve_widget(widget_id: u64) -> R![Widget] {
+///     r![Widget]
 /// }
+///
+/// let _widget_ctx = Ctx::default()
+///     .path(path!["widgets" / widget_id: u64])
+///     .map(retrieve_widget)
+///     .get(path!["show"], |cx: R![Widget]| async move {
+///         format!("{:?}", cx.head)
+///     });
 /// ```
 ///
-/// # Error Handling
-/// Errors that arise during request resolution are represented in the context as [coproducts]
-/// (a generalization of enums). When a fallible middleware is used ([try_map] or [try_then]),
-/// an additional error variant is added to the context's error coproduct. This also applies
-/// to parse errors of dynamic path parameters (which are wrapped in a [tree::UriError]).
+/// # Error handling and flow control
+/// Errors that arise during request resolution are represented in the context as [coproducts] (a
+/// generalization of enums). When a fallible middleware is used ([try_map] or [try_then]), an
+/// additional error variant is added to the context's error coproduct. This also applies to parse
+/// errors of dynamic path parameters (which are wrapped in a [tree::UriError]).
 ///
 /// If a fallible middleware returns `Err`, the request being processed short circuits and cannot
 /// be recovered. The specific error response returned to the client can however be modified by
 /// [map_errs] or [map_err]. The former transforms the complete error coproduct, while the latter
 /// maps over a single variant.
 ///
-/// Much like with request scoped state, any referenced errors in a [map_errs] or [map_err] must
-/// appear in some fallible combinator. This is enforced at compile time.
-///
 /// ```
-/// use frunk_core::Coprod;
-/// use hyper::StatusCode;
-/// use hyperbole::{
-///     body::{jsonr, JsonBodyError},
-///     reply::Reply,
-///     Ctx, R,
-/// };
+/// use hyperbole::{path, record_args, tree::UriError, Ctx, R};
+/// use std::num::ParseIntError;
 ///
-/// let _ctx = Ctx::default()
-///     // attempt to parse the body as a json object:
-///     .try_then(jsonr::<R![x: u32, y: String]>)
-///     // if the above fails, we can adjust the error with map_err:
-///     .map_err(|err: JsonBodyError| err)
-///     // or we can adjust all possible errors with map_errs:
-///     .map_errs(|errs| {
-///         let code = StatusCode::INTERNAL_SERVER_ERROR;
-///         let err = format!("{:?}", errs).with_status(code);
+/// #[derive(Debug)]
+/// struct Widget;
 ///
-///         // return type must be a coproduct as well
-///         <Coprod![_]>::inject(err)
+/// #[record_args]
+/// fn retrieve_widget(widget_id: u64) -> Result<R![Widget], &'static str> {
+///     Err("bad news")
+/// }
+///
+/// let _widget_ctx = Ctx::default()
+///     .path(path!["widgets" / widget_id: u64])
+///     .try_map(retrieve_widget)
+///     .map_err(|e: UriError<ParseIntError>| {
+///         println!("failed to parse {:?} as a u64: {}", e.item, e.err);
+///         e
+///     })
+///     .map_err(|e: &str| {
+///         println!("failed to retrieve widget: {}", e);
+///         e
+///     })
+///     .get(path!["show"], |cx: R![Widget]| async move {
+///         format!("{:?}", cx.head)
 ///     });
 /// ```
 ///
 /// # Limitations
-/// Due to the extensive use of type inference to extract subsets of the request scoped state,
-/// the state may not contain duplicate instances of a type. That is, it is a *set*, and not
-/// a *list*. This property arises without explicit enforcement; type inference will simply
-/// begin failing if duplicate types are encountered.
+/// Due to the extensive use of type inference to extract subsets of the request scoped state, the
+/// state may not contain duplicate instances of a type. That is, it is a *set*, and not a *list*.
+///
+/// This property arises without explicit enforcement; type inference will simply begin failing if
+/// duplicate types are encountered.
 ///
 /// ```compile_fail,E0282
 /// use hyperbole::{r, Ctx, R};
@@ -565,9 +558,9 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     .map(|cx: R![A]| cx);
 /// ```
 ///
-/// [Named fields][field::Field] can be used to disambiguate between what would otherwise be
-/// duplicate types. [path!] in particular takes advantage of this to allow multiple instances
-/// of common primitive types like `u32` or `String` to be extracted from a uri.
+/// [Named fields] can be used to disambiguate between what would otherwise be duplicate types. In
+/// particular, the [path!] macro takes advantage of this to allow multiple instances of common
+/// primitive types like `u32` or `String` to be extracted from a uri.
 ///
 /// The above example can be rewritten using named fields to avoid the inference failure:
 ///
@@ -587,14 +580,15 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///     .map(|cx: R![first: A, second: A]| cx);
 /// ```
 ///
-/// [handle]: Ctx::handle
-/// [get]: Ctx::get
-/// [post]: Ctx::post
-/// [coproducts]: frunk_core::coproduct
+/// [map]: Ctx::map
+/// [then]: Ctx::then
 /// [try_map]: Ctx::try_map
 /// [try_then]: Ctx::try_then
-/// [map_errs]: Ctx::map_errs
 /// [map_err]: Ctx::map_err
+/// [map_errs]: Ctx::map_errs
+/// [path]: Ctx::path
+/// [coproducts]: frunk_core::coproduct
+/// [Named fields]: field::Field
 pub struct Ctx<P, L, S = ()> {
     source: S,
     routes: Vec<RouteEntry>,
@@ -765,10 +759,9 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// The provided closure should accept an hlist argument, and return an hlist.
     ///
-    /// The argument hlist may consist of any subset of types that are present within the
-    /// context's state up to this point. Each element will be removed from the context's
-    /// state and *moved* into `f` upon execution (making them inaccessible to subsequent
-    /// middlewares and handlers).
+    /// The argument hlist may consist of any subset of types that are present within the context's
+    /// state up to this point. Each element will be removed from the context's state and *moved*
+    /// into `f` upon execution (making them inaccessible to subsequent middlewares and handlers).
     ///
     /// Likewise, any types in the returned hlist will be *moved* into the context's state.
     ///
@@ -801,19 +794,18 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// The provided closure should accept an hlist argument, and return an hlist in a [Result]
     /// (where the error type implements [Reply]).
     ///
-    /// The argument hlist may consist of any subset of types that are present within the
-    /// context's state up to this point. Each element will be removed from the context's
-    /// state and *moved* into `f` upon execution (making them inaccessible to subsequent
-    /// middlewares and handlers).
+    /// The argument hlist may consist of any subset of types that are present within the context's
+    /// state up to this point. Each element will be removed from the context's state and *moved*
+    /// into `f` upon execution (making them inaccessible to subsequent middlewares and handlers).
     ///
     /// If the closure returns `Ok`, any types in the returned hlist will be *moved* into the
     /// context's state.
     ///
-    /// If the closure returns `Err`, the request will short circuit with a response created
-    /// via the error's [Reply] implementation.
+    /// If the closure returns `Err`, the request will short circuit with a response created via
+    /// the error's [Reply] implementation.
     ///
-    /// For subsequent combinators, the context's error type will contain an additional variant
-    /// for `E`.
+    /// For subsequent combinators, the context's error type will contain an additional variant for
+    /// `E`.
     ///
     /// # Examples
     /// ```
@@ -836,16 +828,14 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
         self.link_next(|link| TryMap::new(link, f))
     }
 
-    /// Transform a subset of the request scoped state with a closure that returns a
-    /// future.
+    /// Transform a subset of the request scoped state with a closure that returns a future.
     ///
-    /// The provided closure should accept an hlist argument, and return a future that
-    /// evaluates to an hlist.
+    /// The provided closure should accept an hlist argument, and return a future that evaluates
+    /// to an hlist.
     ///
-    /// The argument hlist may consist of any subset of types that are present within the
-    /// context's state up to this point. Each element will be removed from the context's
-    /// state and *moved* into `f` upon execution (making them inaccessible to subsequent
-    /// middlewares and handlers).
+    /// The argument hlist may consist of any subset of types that are present within the context's
+    /// state up to this point. Each element will be removed from the context's state and *moved*
+    /// into `f` upon execution (making them inaccessible to subsequent middlewares and handlers).
     ///
     /// Likewise, any types in the returned hlist will be *moved* into the context's state.
     ///
@@ -877,22 +867,21 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// Transform a subset of the request scoped state with a closure that returns a fallible
     /// future.
     ///
-    /// The provided closure should accept an hlist argument, and return a future that evaluates
-    /// to an hlist in a [Result] (where the error type implements [Reply]).
+    /// The provided closure should accept an hlist argument, and return a future that evaluates to
+    /// an hlist in a [Result] (where the error type implements [Reply]).
     ///
-    /// The argument hlist may consist of any subset of types that are present within the
-    /// context's state up to this point. Each element will be removed from the context's
-    /// state and *moved* into `f` upon execution (making them inaccessible to subsequent
-    /// middlewares and handlers).
+    /// The argument hlist may consist of any subset of types that are present within the context's
+    /// state up to this point. Each element will be removed from the context's state and *moved*
+    /// into `f` upon execution (making them inaccessible to subsequent middlewares and handlers).
     ///
-    /// If the future evaluates to `Ok`, any types in the returned hlist will be *moved* into
-    /// the context's state.
+    /// If the future evaluates to `Ok`, any types in the returned hlist will be *moved* into the
+    /// context's state.
     ///
     /// If the future evaluates to `Err`, the request will short circuit with a response created
     /// via the error's [Reply] implementation.
     ///
-    /// For subsequent combinators, the context's error type will contain an additional variant
-    /// for `E`.
+    /// For subsequent combinators, the context's error type will contain an additional variant for
+    /// `E`.
     ///
     /// # Examples
     /// ```
@@ -924,8 +913,7 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// The error will be a [Coproduct] with a variant for all potential error cases so far.
     ///
-    /// Any [Coproduct] may be returned, so long as any variants it contains all implement
-    /// [Reply].
+    /// Any [Coproduct] may be returned, so long as any variants it contains all implement [Reply].
     ///
     /// # Examples
     /// ```
@@ -951,9 +939,9 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
 
     /// Transform a single variant of the context's error type with a closure.
     ///
-    /// This can be used to selectively modify only a single type of error. Note that if more
-    /// than one instance of the same error type may have occurred, this will only affect the
-    /// most recent of them.
+    /// This can be used to selectively modify only a single type of error. Note that if more than
+    /// one instance of the same error type may have occurred, this will only affect the most
+    /// recent of them.
     ///
     /// # Examples
     /// ```
@@ -983,14 +971,14 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
         self.link_next(|link| MapErr::new(link, f))
     }
 
-    /// Append additional path segments to this context's base path. Any new parameters parsed
-    /// from the uri will be merged into the context's state at this point.
+    /// Append additional path segments to this context's base path. Any new parameters parsed from
+    /// the uri will be merged into the context's state at this point.
     ///
     /// The [path!] macro can be used to construct an appropriate [`PathSpec`].
     ///
-    /// When a request is being handled, the concatenated path specification is parsed before
-    /// any middlewares execute. However, all extracted parameters (and parsing errors) are
-    /// deferred such that they only appear at the point where they were specified.
+    /// When a request is being handled, the concatenated path specification is parsed before any
+    /// middlewares execute. However, all extracted parameters (and parsing errors) are deferred
+    /// such that they only appear at the point where they were specified.
     ///
     /// # Examples
     /// ```
@@ -1021,16 +1009,15 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
 
     /// Register a request handler for this context's base path with `spec` appended to it.
     ///
-    /// The provided `handler` closure should accept an hlist argument, and return a future
-    /// that evaluates to an http response (via the [Reply] trait).
+    /// The provided `handler` closure should accept an hlist argument, and return a future that
+    /// evaluates to an http response (via the [Reply] trait).
     ///
-    /// The argument hlist may consist of any subset of types that are present within the
-    /// context's state up to this point, or any parameters parsed from the provided path
-    /// `spec`.
+    /// The argument hlist may consist of any subset of types that are present within the context's
+    /// state up to this point, or any parameters parsed from the provided path `spec`.
     ///
-    /// If an incoming request matches this route, every middleware accumulated in the context
-    /// up to this point will execute. Assuming none of them short circuit with an error, this
-    /// handler will then be executed.
+    /// If an incoming request matches this route, every middleware accumulated in the context up
+    /// to this point will execute. Assuming none of them short circuit with an error, this handler
+    /// will then be executed.
     ///
     /// # Examples
     /// ```
@@ -1095,12 +1082,12 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// Register a request handler for this context's base path with `spec` appended to it.
     ///
     /// The semantics of this are mostly equivalent to [handle], except for an additional `with`
-    /// argument, which should be a closure that could be passed to [try_then]. It will behave
-    /// as if added between the path combinator and handler (that is, it has access to any new
-    /// types introduced in `spec`, and merges types accessible to `handler`).
+    /// argument, which should be a closure that could be passed to [try_then]. It will behave as
+    /// if added between the path combinator and handler (that is, it has access to any new types
+    /// introduced in `spec`, and merges types accessible to `handler`).
     ///
-    /// This is useful for specifying a different request body parser for multiple handlers
-    /// that otherwise share the same chain of middlewares.
+    /// This is useful for specifying a different request body parser for multiple handlers that
+    /// otherwise share the same chain of middlewares.
     ///
     /// # Examples
     /// ```
