@@ -1,5 +1,5 @@
 //! Middleware combinators.
-use super::{field::Field, reply::Reply, Response, R};
+use super::{field::Field, r, reply::Reply, Response, R};
 use headers::{Cookie, Header, HeaderMapExt};
 use http::{header::HeaderName, HeaderMap, HeaderValue};
 use hyper::StatusCode;
@@ -194,4 +194,25 @@ pub fn cookie_opt<const NAME: &'static str>(
         .and_then(|c| c.get(NAME).map(|v| v.to_owned()));
 
     cx.prepend(cookie.into())
+}
+
+/// Rename a named field in the request scoped state.
+///
+/// Use with [`Ctx::map`][super::Ctx::map].
+///
+/// # Examples
+/// ```
+/// use hyperbole::{mw, r, Ctx, R};
+///
+/// let _ctx = Ctx::with_state(r![foo = "hello world"])
+///     .map(|cx: R![foo: _]| cx)
+///     .map(mw::rename::<_, "foo", "bar">)
+///     .map(|cx: R![bar: _]| cx);
+/// ```
+pub fn rename<T, const OLD: &'static str, const NEW: &'static str>(
+    cx: R![Field<T, OLD>],
+) -> R![
+       Field<T, NEW>
+   ] {
+    r![cx.head.into_inner().into()]
 }
