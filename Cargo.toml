@@ -1,6 +1,6 @@
 [package]
 name = "hyperbole"
-version = "0.1.1-alpha.1"
+version = "0.1.1"
 authors = ["nytopop <ericizoita@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -18,7 +18,7 @@ categories = ["web-programming", "asynchronous"]
 members = [ "hyperbole_macros" ]
 
 [dependencies]
-hyperbole_macros = { version = "0.1.0-alpha.1" }
+hyperbole_macros = { version = "0.1.0" }
 frunk_core = "0.3.1"
 bytes = "0.5.5"
 thiserror = "1.0.20"
