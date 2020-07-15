@@ -7,9 +7,6 @@
 ))]
 #![warn(rust_2018_idioms, missing_docs)]
 
-#[doc(inline)]
-pub use frunk_core::{coproduct, hlist, Coprod, Hlist};
-
 /// An attribute macro to reduce boilerplate when writing functions that accept an hlist as
 /// an argument (handlers and middlewares).
 ///
@@ -19,34 +16,28 @@ pub use frunk_core::{coproduct, hlist, Coprod, Hlist};
 ///
 /// # Examples
 ///
-/// `fn f(a: u32, b: u32)` translates to `fn f(_: Hlist![f![a: u32], f![b: u32]])`.
+/// `fn f(a: u32, b: u32)` translates to `fn f(_: R![a: u32, b: u32])`.
 ///
-/// `fn f(a: u32, _b: u32)` translates to `fn f(_: Hlist![f![a: u32], u32])`.
+/// `fn f(a: u32, _b: u32)` translates to `fn f(_: R![a: u32, u32])`.
 ///
 /// ```
-/// use hyperbole::{f, hlist, record, record_args, Hlist};
+/// use hyperbole::{r, record_args, R};
 ///
 /// #[record_args]
 /// async fn my_func_a(first: u8, second: String, _third: Vec<u8>) {
 ///     // do stuff
 /// }
 ///
-/// async fn call_my_func_a() {
-///     // the translated function can be called using record syntax:
-///     my_func_a(record![first = 4, second = "test-string".to_owned(), [
-///         vec![1, 2, 3]
-///     ]])
-///     .await;
-///
-///     // or desugared hlist syntax:
-///     my_func_a(hlist![4.into(), "test-string".to_owned().into(), vec![
-///         1, 2, 3
-///     ]])
-///     .await;
-/// }
+/// # async fn call_my_func_a() {
+/// // the translated function can be called using record syntax:
+/// my_func_a(r![first = 4, second = "test-string".to_owned(), vec![
+///     1, 2, 3
+/// ]])
+/// .await;
+/// # }
 ///
 /// // 'my_func_a' above is translated to something like this:
-/// async fn my_func_b(cx: Hlist![f![first: u8], f![second: String], Vec<u8>]) {
+/// async fn my_func_b(cx: R![first: u8, second: String, Vec<u8>]) {
 ///     async fn my_func_b(first: u8, second: String, _third: Vec<u8>) {
 ///         // do stuff
 ///     }
@@ -60,6 +51,9 @@ pub use frunk_core::{coproduct, hlist, Coprod, Hlist};
 /// }
 /// ```
 pub use hyperbole_macros::record_args;
+
+#[doc(hidden)]
+pub use frunk_core;
 
 pub mod body;
 mod combinators;
@@ -157,7 +151,7 @@ impl Service<Request<Body>> for AppService {
 }
 
 /// The set of request scoped state that contexts are initialized with.
-pub type Init = Hlist![
+pub type Init = R![
     Body,
     Method,
     Uri,
@@ -172,15 +166,15 @@ pub type Init = Hlist![
 /// # Examples
 /// ```no_run
 /// use hyper::{server::Server, Body};
-/// use hyperbole::{path, record, App};
+/// use hyperbole::{path, App, R};
 ///
 /// #[tokio::main]
 /// async fn main() -> hyper::Result<()> {
 ///     let app = App::new()
 ///         .context_path(path!["first" / param: u32])
-///         .map(|cx: record![param]| cx)
+///         .map(|cx: R![param: _]| cx)
 ///         // GET /first/:param/echo
-///         .get(path!["echo"], |cx: record![param, [Body]]| async move {
+///         .get(path!["echo"], |cx: R![param: _, Body]| async move {
 ///             let (param, body) = cx.into();
 ///             format!("param: {}, body: {:?}", param, body)
 ///         })
@@ -211,25 +205,25 @@ impl App {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{access, f, record, App, Hlist};
+    /// use hyperbole::{f, zoom, App, R};
     ///
     /// let _app = App::new()
     ///     .context()
     ///     // &'static str will be available in this context
     ///     .inject("hello world")
-    ///     .map(|cx: Hlist![&str]| {
+    ///     .map(|cx: R![&str]| {
     ///         println!("str is {:?}", cx.get::<&str, _>());
     ///         cx
     ///     })
-    ///     .map(|cx: Hlist![&'static str]| cx)
+    ///     .map(|cx: R![&'static str]| cx)
     ///     .collapse();
     ///
     /// let _app = App::new()
     ///     .context()
     ///     // 'x: {integer}' will be available in this context
     ///     .inject(f![x = 40])
-    ///     .map(|cx: record![x: u64]| {
-    ///         println!("x is {}", access!(&cx.x));
+    ///     .map(|cx: R![x: u64]| {
+    ///         println!("x is {}", zoom!(&cx.x));
     ///         cx
     ///     })
     ///     .collapse();
@@ -381,11 +375,11 @@ impl App {
     /// This method panics if any routes in `routes` conflict with a route in the [App].
     ///
     /// ```should_panic
-    /// use hyperbole::{path, record, App, Ctx};
+    /// use hyperbole::{path, App, Ctx, R};
     ///
     /// let routes = Ctx::default()
-    ///     .get(path!["conflict"], |_: record![]| async { "" })
-    ///     .get(path!["conflict"], |_: record![]| async { "" })
+    ///     .get(path!["conflict"], |_: R![]| async { "" })
+    ///     .get(path!["conflict"], |_: R![]| async { "" })
     ///     .into_routes();
     ///
     /// // 'a handler is already registered for path "/conflict"'
@@ -393,11 +387,11 @@ impl App {
     /// ```
     ///
     /// ```should_panic
-    /// use hyperbole::{path, record, App, Ctx};
+    /// use hyperbole::{path, App, Ctx, R};
     ///
     /// let routes = Ctx::default()
-    ///     .get(path!["something"], |_: record![]| async { "" })
-    ///     .get(path![param: u32], |_: record![]| async { "" })
+    ///     .get(path!["something"], |_: R![]| async { "" })
+    ///     .get(path![param: u32], |_: R![]| async { "" })
     ///     .into_routes();
     ///
     /// // 'wildcard ":param" conflicts with existing children in path "/:param"'
@@ -453,7 +447,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///
 /// ```
 /// use hyper::Body;
-/// use hyperbole::{hlist, Ctx, Hlist};
+/// use hyperbole::{r, Ctx, R};
 ///
 /// #[derive(Copy, Clone)]
 /// struct DbHandle;
@@ -461,18 +455,18 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// struct A;
 /// struct B;
 ///
-/// let _ctx = Ctx::with_state(hlist![DbHandle])
+/// let _ctx = Ctx::with_state(r![DbHandle])
 ///     // move nothing, and return nothing to be merged
-///     .map(|cx: Hlist![]| cx)
+///     .map(|cx: R![]| cx)
 ///     // move req body, but merge it back
-///     .map(|cx: Hlist![Body]| cx)
+///     .map(|cx: R![Body]| cx)
 ///     // move req body, and merge an A and B
-///     .map(|cx: Hlist![Body]| hlist![A, B])
+///     .map(|cx: R![Body]| r![A, B])
 ///     // subset ordering doesn't matter
-///     .map(|cx: Hlist![B, DbHandle, A]| cx)
-///     .then(|cx: Hlist![A]| async { cx })
-///     .map(|cx: Hlist![A, B]| cx)
-///     .then(|cx: Hlist![B]| async { cx });
+///     .map(|cx: R![B, DbHandle, A]| cx)
+///     .then(|cx: R![A]| async { cx })
+///     .map(|cx: R![A, B]| cx)
+///     .then(|cx: R![B]| async { cx });
 /// ```
 ///
 /// At any point in a context chain, a handler can be registered by calling [handle] or one
@@ -482,19 +476,19 @@ fn method_idx(m: &Method) -> Option<usize> {
 ///
 /// ```
 /// use hyper::Body;
-/// use hyperbole::{access, path, record, record_args, Ctx, Hlist};
+/// use hyperbole::{path, record_args, zoom, Ctx, R};
 ///
 /// let _ctx = Ctx::with_path(path![dynamic: u32])
 ///     // GET /:dynamic/echo_req
-///     .get(path!["echo_req"], |cx: Hlist![Body]| async move {
+///     .get(path!["echo_req"], |cx: R![Body]| async move {
 ///         // hlists can be converted into tuples
 ///         let (body,) = cx.into();
 ///         format!("echo: {:?}", body)
 ///     })
 ///     // GET /:dynamic/tell_dynamic
-///     .get(path!["tell_dynamic"], |cx: record![dynamic]| async move {
-///         // or use the access! macro for named field accesses
-///         format!("dynamic is {}", access!(&cx.dynamic))
+///     .get(path!["tell_dynamic"], |cx: R![dynamic: _]| async move {
+///         // or use the zoom! macro for named fields
+///         format!("dynamic is {}", zoom!(&cx.dynamic))
 ///     })
 ///     .path(path!["all" / "the" / "subpaths"])
 ///     // GET /:dynamic/all/the/subpaths/discrete
@@ -525,17 +519,17 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// appear in some fallible combinator. This is enforced at compile time.
 ///
 /// ```
+/// use frunk_core::Coprod;
 /// use hyper::StatusCode;
 /// use hyperbole::{
 ///     body::{jsonr, JsonBodyError},
-///     record,
 ///     reply::Reply,
-///     Coprod, Ctx,
+///     Ctx, R,
 /// };
 ///
 /// let _ctx = Ctx::default()
 ///     // attempt to parse the body as a json object:
-///     .try_then(jsonr::<record![x: u32, y: String]>)
+///     .try_then(jsonr::<R![x: u32, y: String]>)
 ///     // if the above fails, we can adjust the error with map_err:
 ///     .map_err(|err: JsonBodyError| err)
 ///     // or we can adjust all possible errors with map_errs:
@@ -555,20 +549,20 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// begin failing if duplicate types are encountered.
 ///
 /// ```compile_fail,E0282
-/// use hyperbole::{hlist, Ctx, Hlist};
+/// use hyperbole::{r, Ctx, R};
 ///
 /// struct A(u32);
 ///
 /// let _ctx = Ctx::default()
 ///     // merge an A
-///     .map(|cx: Hlist![]| hlist![A(1)])
+///     .map(|cx: R![]| r![A(1)])
 ///     // merge an A (state now contains two `A`s)
-///     .map(|cx: Hlist![]| hlist![A(2)])
+///     .map(|cx: R![]| r![A(2)])
 ///     // this fails during type inference, because it's ambiguous _which_ A we want
 ///     //
 ///     // error[E0282]: type annotations needed
 ///     //     cannot infer type for type parameter `TailIndex`
-///     .map(|cx: Hlist![A]| cx);
+///     .map(|cx: R![A]| cx);
 /// ```
 ///
 /// [Named fields][field::Field] can be used to disambiguate between what would otherwise be
@@ -578,25 +572,25 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// The above example can be rewritten using named fields to avoid the inference failure:
 ///
 /// ```
-/// use hyperbole::{record, Ctx};
+/// use hyperbole::{r, Ctx, R};
 ///
 /// struct A(u32);
 ///
 /// let _ctx = Ctx::default()
-///     .map(|cx: record![]| record![first = A(1)])
-///     .map(|cx: record![]| record![second = A(2)])
+///     .map(|cx: R![]| r![first = A(1)])
+///     .map(|cx: R![]| r![second = A(2)])
 ///     // we want the A called 'second'
-///     .map(|cx: record![second]| cx)
+///     .map(|cx: R![second: A]| cx)
 ///     // we want the A called 'first'
-///     .map(|cx: record![first]| cx)
+///     .map(|cx: R![first: A]| cx)
 ///     // we want both of them
-///     .map(|cx: record![first, second]| cx);
+///     .map(|cx: R![first: A, second: A]| cx);
 /// ```
 ///
 /// [handle]: Ctx::handle
 /// [get]: Ctx::get
 /// [post]: Ctx::post
-/// [coproducts]: coproduct
+/// [coproducts]: frunk_core::coproduct
 /// [try_map]: Ctx::try_map
 /// [try_then]: Ctx::try_then
 /// [map_errs]: Ctx::map_errs
@@ -693,11 +687,11 @@ impl<P: HList + Send + Parser<Segment>> Ctx<Params<P>, Path<Base, P, Here>> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, record, Ctx};
+    /// use hyperbole::{path, r, Ctx, R};
     ///
     /// let _ctx = Ctx::with_path(path!["foo" / "bar" / baz: f64])
-    ///     .map(|cx: record![baz]| record![qux = *cx.head > 3.14159265])
-    ///     .map(|cx: record![qux]| cx);
+    ///     .map(|cx: R![baz: _]| r![qux = *cx.head > 3.14159265])
+    ///     .map(|cx: R![qux: _]| cx);
     /// ```
     pub fn with_path(spec: PathSpec<P>) -> Self {
         Ctx::default().path(spec)
@@ -712,12 +706,12 @@ where InjectAll<Base, T>: Link<Init, HNil>
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{record, Ctx};
+    /// use hyperbole::{r, Ctx, R};
     ///
-    /// let _ctx = Ctx::with_state(record![x = 4, y = "hello", z = "world"])
-    ///     .map(|cx: record![x]| cx)
-    ///     .map(|cx: record![y, z]| cx)
-    ///     .map(|cx: record![z, x, y]| cx);
+    /// let _ctx = Ctx::with_state(r![x = 4, y = "hello", z = "world"])
+    ///     .map(|cx: R![x: _]| cx)
+    ///     .map(|cx: R![y: _, z: _]| cx)
+    ///     .map(|cx: R![z: _, x: _, y: _]| cx);
     /// ```
     pub fn with_state(values: T) -> Self {
         Ctx::default().inject_all(values)
@@ -737,13 +731,13 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{f, hlist, record, Ctx, Hlist};
+    /// use hyperbole::{f, r, Ctx, R};
     ///
     /// let _ctx = Ctx::default()
     ///     .inject("just an &str")
-    ///     .map(|cx: Hlist![&str]| hlist![])
+    ///     .map(|cx: R![&str]| r![])
     ///     .inject(f![xyz = "this is a named field"])
-    ///     .map(|cx: record![xyz]| hlist![]);
+    ///     .map(|cx: R![xyz: _]| r![]);
     /// ```
     pub fn inject<T: Clone>(self, value: T) -> Ctx<P, Inject<L, T>, S>
     where Inject<L, T>: Link<Init, P> {
@@ -754,13 +748,13 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{record, Ctx};
+    /// use hyperbole::{r, Ctx, R};
     ///
     /// let _ctx = Ctx::default()
-    ///     .inject_all(record![a = "foobar", b = 42])
-    ///     .map(|cx: record![b, a]| cx)
-    ///     .inject_all(record![c = ()])
-    ///     .map(|cx: record![a, b, c]| cx);
+    ///     .inject_all(r![a = "foobar", b = 42])
+    ///     .map(|cx: R![b: _, a: _]| cx)
+    ///     .inject_all(r![c = ()])
+    ///     .map(|cx: R![a: _, b: _, c: _]| cx);
     /// ```
     pub fn inject_all<T: Clone>(self, values: T) -> Ctx<P, InjectAll<L, T>, S>
     where InjectAll<L, T>: Link<Init, P> {
@@ -781,16 +775,16 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// # Examples
     /// ```
     /// use hyper::Body;
-    /// use hyperbole::{hlist, record_args, Ctx, Hlist};
+    /// use hyperbole::{r, record_args, Ctx, R};
     ///
     /// #[record_args]
-    /// fn fun(_: Body, _: u32) -> Hlist![] {
-    ///     hlist![]
+    /// fn fun(_: Body, _: u32) -> R![] {
+    ///     r![]
     /// }
     ///
     /// let _ctx = Ctx::default()
-    ///     .map(|cx: Hlist![Body]| cx)
-    ///     .map(|cx: Hlist![]| hlist![12345])
+    ///     .map(|cx: R![Body]| cx)
+    ///     .map(|cx: R![]| r![12345])
     ///     .map(fun);
     /// ```
     pub fn map<F, Args, Ix, Merge>(self, f: F) -> Ctx<P, Map<L, F, Args, Ix>, S>
@@ -823,10 +817,10 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{access, path, record, Ctx};
+    /// use hyperbole::{path, zoom, Ctx, R};
     ///
     /// let _ctx = Ctx::with_path(path![a: u32 / b: u32])
-    ///     .try_map(|cx: record![a, b]| match access!(&cx.a) > access!(&cx.b) {
+    ///     .try_map(|cx: R![a: _, b: _]| match zoom!(&cx.a) > zoom!(&cx.b) {
     ///         false => Err("uh oh"),
     ///         true => Ok(cx),
     ///     })
@@ -858,16 +852,16 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// # Examples
     /// ```
     /// use hyper::Body;
-    /// use hyperbole::{hlist, record_args, Ctx, Hlist};
+    /// use hyperbole::{r, record_args, Ctx, R};
     ///
     /// #[record_args]
-    /// async fn fun(_: Body) -> Hlist![] {
-    ///     hlist![]
+    /// async fn fun(_: Body) -> R![] {
+    ///     r![]
     /// }
     ///
     /// let _ctx = Ctx::default()
-    ///     .then(|cx: Hlist![Body]| async move { cx })
-    ///     .then(|cx: Hlist![]| async move { cx })
+    ///     .then(|cx: R![Body]| async move { cx })
+    ///     .then(|cx: R![]| async move { cx })
     ///     .then(fun);
     /// ```
     pub fn then<F, Args, Ix, Fut, Merge>(self, f: F) -> Ctx<P, Then<L, F, Args, Ix>, S>
@@ -902,18 +896,18 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, record, Ctx};
+    /// use hyperbole::{path, r, Ctx, R};
     ///
     /// let _ctx = Ctx::with_path(path![a: f64 / b: String])
-    ///     .try_then(|cx: record![a, b]| async move {
+    ///     .try_then(|cx: R![a: f64, b: String]| async move {
     ///         let (a, b) = cx.into();
     ///         if *a == 3.14159265 && *b != "blue" {
     ///             Err("always blue!")
     ///         } else {
-    ///             Ok(record![color = "it was blue!"])
+    ///             Ok(r![color = "it was blue!"])
     ///         }
     ///     })
-    ///     .map(|cx: record![color]| cx);
+    ///     .map(|cx: R![color: _]| cx);
     /// ```
     pub fn try_then<F, Args, Ix, Fut, Merge, E>(self, f: F) -> Ctx<P, TryThen<L, F, Args, Ix>, S>
     where
@@ -935,13 +929,16 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{record, Coprod, Ctx};
+    /// use frunk_core::Coprod;
+    /// use hyperbole::{Ctx, R};
     ///
     /// let _ctx = Ctx::default()
     ///     // without any fallible combinators, the error is an uninhabitable enum:
     ///     .map_errs(|err: Coprod![]| -> Coprod![] { match err {} })
-    ///     .map(|cx: record![]| cx);
+    ///     .map(|cx: R![]| cx);
     /// ```
+    ///
+    /// [Coproduct]: frunk_core::coproduct::Coproduct
     pub fn map_errs<F, E>(self, f: F) -> Ctx<P, MapErrs<L, F>, S>
     where
         F: Fn(<L as Link<Init, P>>::Error) -> E,
@@ -960,14 +957,14 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{record, record_args, Ctx};
+    /// use hyperbole::{record_args, Ctx, R};
     ///
-    /// fn fallible_a(_: record![]) -> Result<record![], String> {
+    /// fn fallible_a(_: R![]) -> Result<R![], String> {
     ///     Err("uh oh".to_owned())
     /// }
     ///
     /// #[record_args]
-    /// fn fallible_b() -> Result<record![], Vec<u8>> {
+    /// fn fallible_b() -> Result<R![], Vec<u8>> {
     ///     Err(b"uh oh".to_vec())
     /// }
     ///
@@ -997,17 +994,17 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{path, record, tree::UriError, Ctx};
+    /// use hyperbole::{path, tree::UriError, Ctx, R};
     /// use std::num::ParseFloatError;
     ///
     /// let _ctx = Ctx::default()
     ///     .path(path!["first" / x: usize / y: f64])
-    ///     .map(|cx: record![x]| cx)
+    ///     .map(|cx: R![x: _]| cx)
     ///     .map_err(|e: UriError<ParseFloatError>| e.item)
-    ///     .map(|cx: record![y]| cx)
-    ///     .map(|cx: record![x, y]| cx)
+    ///     .map(|cx: R![y: _]| cx)
+    ///     .map(|cx: R![x: _, y: _]| cx)
     ///     // GET /first/:x/:y/abc
-    ///     .get(path!["abc"], |cx: record![x, y]| async { "" });
+    ///     .get(path!["abc"], |cx: R![x: _, y: _]| async { "" });
     /// ```
     pub fn path<_P, Ix>(self, spec: PathSpec<_P>) -> Ctx<Add2<P, Params<_P>>, Path<L, _P, Ix>, S>
     where
@@ -1038,24 +1035,24 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// # Examples
     /// ```
     /// use hyper::Body;
-    /// use hyperbole::{hlist, path, record, record_args, reply::Reply, Ctx, Hlist};
+    /// use hyperbole::{path, r, record_args, reply::Reply, Ctx, R};
     ///
     /// #[record_args]
     /// async fn doit(baz: f64) -> &'static str {
     ///     "&'static str implements Reply"
     /// }
     ///
-    /// async fn more(cx: Hlist![Body, u32]) -> &'static [u8] {
+    /// async fn more(cx: R![Body, u32]) -> &'static [u8] {
     ///     b"so does &'static [u8]"
     /// }
     ///
-    /// async fn using_impl(cx: Hlist![]) -> impl Reply {
+    /// async fn using_impl(cx: R![]) -> impl Reply {
     ///     vec![1, 2, 3, 4, 5]
     /// }
     ///
     /// let _ctx = Ctx::with_path(path!["foo" / "bar" / baz: f64])
     ///     .get(path!["doit"], doit)
-    ///     .map(|cx: record![baz]| hlist![15])
+    ///     .map(|cx: R![baz: _]| r![15])
     ///     .get(path!["more" / neat: u32], more)
     ///     .get(path!["more"], more)
     ///     .get(path!["more" / neat: u32 / "nested"], more)
@@ -1107,15 +1104,15 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{body::jsonr, path, record, Ctx};
+    /// use hyperbole::{body::jsonr, path, Ctx, R};
     ///
-    /// async fn handle_abc(cx: record![a: u32, b: String, c: f64]) -> &'static str {
+    /// async fn handle_abc(cx: R![a: u32, b: String, c: f64]) -> &'static str {
     ///     "neat"
     /// }
     ///
     /// let _app = Ctx::default()
-    ///     .get_with(path!["1" / a: u32], jsonr::<record![b, c]>, handle_abc)
-    ///     .get_with(path!["2" / a: u32], jsonr::<record![b, c]>, handle_abc);
+    ///     .get_with(path!["1" / a: u32], jsonr::<R![b: _, c: _]>, handle_abc)
+    ///     .get_with(path!["2" / a: u32], jsonr::<R![b: _, c: _]>, handle_abc);
     /// ```
     ///
     /// [handle]: Ctx::handle
@@ -1163,6 +1160,10 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
 
     /// Collapse this context and retrieve any routes registered via [handle] (or helpers like
     /// [get], [post], etc).
+    ///
+    /// [handle]: Ctx::handle
+    /// [get]: Ctx::get
+    /// [post]: Ctx::post
     pub fn into_routes(self) -> Routes {
         Routes { inner: self.routes }
     }
@@ -1179,24 +1180,24 @@ impl<P: 'static, L: Sync + Send + Clone + 'static> Ctx<P, L, App> {
     /// eachother or any routes in the [App].
     ///
     /// ```should_panic
-    /// use hyperbole::{path, record, App};
+    /// use hyperbole::{path, App, R};
     ///
     /// // 'a handler is already registered for path "/conflict"'
     /// let _app = App::new()
     ///     .context()
-    ///     .get(path!["conflict"], |_: record![]| async { "" })
-    ///     .get(path!["conflict"], |_: record![]| async { "" })
+    ///     .get(path!["conflict"], |_: R![]| async { "" })
+    ///     .get(path!["conflict"], |_: R![]| async { "" })
     ///     .collapse();
     /// ```
     ///
     /// ```should_panic
-    /// use hyperbole::{path, record, App};
+    /// use hyperbole::{path, App, R};
     ///
     /// // 'wildcard ":param" conflicts with existing children in path "/:param"'
     /// let _app = App::new()
     ///     .context()
-    ///     .get(path!["something"], |_: record![]| async { "" })
-    ///     .get(path![param: u32], |_: record![]| async { "" })
+    ///     .get(path!["something"], |_: R![]| async { "" })
+    ///     .get(path![param: u32], |_: R![]| async { "" })
     ///     .collapse();
     /// ```
     ///

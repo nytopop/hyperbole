@@ -5,7 +5,7 @@ use hyperbole::{reply::Reply, *};
 async fn test_json_response() {
     let app = App::new()
         .context()
-        .get(path![x: u32 / y: f64], |cx: record![x, y]| async move {
+        .get(path![x: u32 / y: f64], |cx: R![x: _, y: _]| async move {
             reply::jsonr(&cx)
         })
         .collapse()
@@ -20,7 +20,7 @@ async fn test_json_response() {
 async fn test_jsonr_errors() {
     let input = r#"{"a":3,"b":32324,"c":345345.34}"#;
 
-    let res = body::jsonr::<record![a: String, b: u32, c: f32]>(hlist![input.into()])
+    let res = body::jsonr::<R![a: String, b: u32, c: f32]>(r![input.into()])
         .await
         .unwrap_err();
 

@@ -4,27 +4,27 @@ use hyperbole::*;
 #[test]
 fn test_modify_uri_parser_after_erasure() {
     let _ = Ctx::default()
-        .map(|_: Hlist![Body]| record![])
-        .map(|_: record![]| record![foo = 40u64])
+        .map(|_: R![Body]| r![])
+        .map(|_: R![]| r![foo = 40u64])
         .path(path![bar: u32])
-        .map(|_: record![bar, foo]| record![]);
+        .map(|_: R![bar: _, foo: _]| r![]);
 
     let _ = Ctx::default()
         .inject(f![x = 40])
-        .map(|_: record![x]| record![])
+        .map(|_: R![x: _]| r![])
         .path(path![y: u32])
-        .map(|_: record![y]| record![]);
+        .map(|_: R![y: _]| r![]);
 
     let _ = Ctx::default()
-        .map(|_: record![]| record![x = 40])
-        .map(|cx: record![x]| cx)
+        .map(|_: R![]| r![x = 40])
+        .map(|cx: R![x: _]| cx)
         .path(path![y: u32])
-        .map(|_: record![y]| record![]);
+        .map(|_: R![y: _]| r![]);
 }
 
 #[tokio::test]
 async fn test_basic_uri_parsing() {
-    async fn handle(cx: record![x: u32, y: f64]) -> String {
+    async fn handle(cx: R![x: u32, y: f64]) -> String {
         let (x, y) = cx.into();
         format!("x: {}, y: {}", x, y)
     }
@@ -56,23 +56,23 @@ async fn test_basic_uri_parsing() {
 
 #[tokio::test]
 async fn test_route_dispatch_with_ctx_val() {
-    async fn handle(cx: record![val: u32]) -> String {
+    async fn handle(cx: R![val: u32]) -> String {
         format!("{}", *cx.head)
     }
 
     let app = App::new()
         .context()
-        .map(|_: record![]| record![val = 0])
+        .map(|_: R![]| r![val = 0])
         .get(path!["a"], handle)
-        .map(|_: record![val]| record![val = 1])
+        .map(|_: R![val: _]| r![val = 1])
         .get(path!["b"], handle)
-        .map(|_: record![val]| record![val = 2])
+        .map(|_: R![val: _]| r![val = 2])
         .get(path!["c"], handle)
-        .map(|_: record![val]| record![val = 3])
+        .map(|_: R![val: _]| r![val = 3])
         .get(path!["d"], handle)
-        .map(|_: record![val]| record![val = 4])
+        .map(|_: R![val: _]| r![val = 4])
         .get(path!["e"], handle)
-        .map(|_: record![val]| record![val = 5])
+        .map(|_: R![val: _]| r![val = 5])
         .get(path!["f"], handle)
         .collapse()
         .test_client();

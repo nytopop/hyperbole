@@ -2,9 +2,10 @@
 #![allow(clippy::option_map_unit_fn)]
 use hyper::{server::Server, StatusCode};
 use hyperbole::{
-    body, f, path, record, record_args,
+    body::jsonr,
+    f, path, r, record_args,
     reply::{self, Reply},
-    App, Response,
+    App, Response, R,
 };
 use serde::Serialize;
 use std::{
@@ -68,7 +69,7 @@ async fn main() -> hyper::Result<()> {
         .context_path(path!["widgets"])
         .inject(f![db = Db::default()])
         // POST /widgets/new
-        .post_with(path!["new"], body::jsonr::<record![name, desc, count]>, new)
+        .post_with(path!["new"], jsonr::<R![name: _, desc: _, count: _]>, new)
         // GET /widgets
         // GET /widgets?range=4..30
         .get(path![? range: IdRange], list)
@@ -76,7 +77,7 @@ async fn main() -> hyper::Result<()> {
         // GET /widgets/:id
         .get(path![], get)
         // PATCH /widgets/:id {"name": "blabla", "desc": null, "count": 40}
-        .patch_with(path![], body::jsonr::<record![name, desc, count]>, update)
+        .patch_with(path![], jsonr::<R![name: _, desc: _, count: _]>, update)
         // DELETE /widgets/:id
         .delete(path![], delete)
         .collapse();
@@ -111,7 +112,7 @@ struct Widget {
 }
 
 fn missing_widget(id: u64) -> Response {
-    reply::jsonr(&record![error = format!("could not find widget {}", id)])
+    reply::jsonr(&r![error = format!("could not find widget {}", id)])
         .with_status(StatusCode::NOT_FOUND)
 }
 
@@ -137,7 +138,7 @@ async fn list(db: Db, range: IdRange) -> Response {
 
     let widgets: Vec<_> = db.entries.range(range).map(|kv| kv.1).collect();
 
-    reply::jsonr(&record![widgets = widgets])
+    reply::jsonr(&r![widgets = widgets])
 }
 
 #[record_args]

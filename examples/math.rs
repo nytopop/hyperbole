@@ -1,26 +1,26 @@
 //! A simple api that does some math.
 use hyper::server::Server;
-use hyperbole::{path, record, App};
+use hyperbole::{path, record_args, App, R};
 
-async fn mul(cx: record![a: f64, b: f64]) -> String {
-    let (a, b) = cx.into();
-    format!("{}\n", *a * *b)
+#[record_args]
+async fn mul(a: f64, b: f64) -> String {
+    format!("{}\n", a * b)
 }
 
-async fn div(cx: record![a: f64, b: f64]) -> String {
-    let (a, b) = cx.into();
-    format!("{}\n", *a / *b)
+#[record_args]
+async fn div(a: f64, b: f64) -> String {
+    format!("{}\n", a / b)
 }
 
 #[tokio::main]
 async fn main() -> hyper::Result<()> {
     let app = App::new()
         .context_path(path![a: f64 / b: f64])
-        .get(path!["add"], |cx: record![a, b]| async move {
+        .get(path!["add"], |cx: R![a: _, b: _]| async move {
             let (a, b) = cx.into();
             format!("{}\n", *a + *b)
         })
-        .get(path!["sub"], |cx: record![b, a]| async move {
+        .get(path!["sub"], |cx: R![a: _, b: _]| async move {
             let (a, b) = cx.into();
             format!("{}\n", *a - *b)
         })

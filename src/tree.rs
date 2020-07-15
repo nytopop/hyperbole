@@ -1,11 +1,10 @@
 //! Compressing dynamic route trie based on [httprouter].
 //!
 //! [httprouter]: https://github.com/julienschmidt/httprouter
-use super::{combinators::Add2, reply::Reply, Response};
+use super::{combinators::Add2, reply::Reply, Response, R};
 use frunk_core::{
     coproduct::{CNil, Coproduct},
     hlist::{HCons, HNil},
-    Hlist,
 };
 use hyper::StatusCode;
 use percent_encoding::percent_decode_str;
@@ -82,10 +81,9 @@ use thiserror::Error;
 /// ```
 ///
 /// # Interaction with request scoped state
-/// Any parameters in a [path!] invocation are tracked as [named fields][field::Field] in a
-/// [record!].
+/// Any parameters in a [path!] invocation are exposed as [named fields][field::Field].
 ///
-/// After parsing completes, said record will be merged with any other request scoped state.
+/// After parsing completes, said fields will be merged with any other request scoped state.
 ///
 /// [fromstr]: std::str::FromStr
 #[macro_export]
@@ -389,8 +387,8 @@ impl<P> PathSpec<P> {
     ///
     /// # Panics
     /// This panics if the path spec already contains a catch-all parameter.
-    pub fn dynamic<T: FromStr>(mut self, name: &'static str) -> PathSpec<Add2<P, Hlist![T]>>
-    where P: Add<Hlist![T]> {
+    pub fn dynamic<T: FromStr>(mut self, name: &'static str) -> PathSpec<Add2<P, R![T]>>
+    where P: Add<R![T]> {
         assert! { !self.contains_catch_all(),
             "path spec: cannot specify param after a catch-all",
         }
@@ -403,8 +401,8 @@ impl<P> PathSpec<P> {
     ///
     /// # Panics
     /// This panics if the path spec already contains a catch-all parameter.
-    pub fn catch_all<T: FromStr>(mut self, name: &'static str) -> PathSpec<Add2<P, Hlist![T]>>
-    where P: Add<Hlist![T]> {
+    pub fn catch_all<T: FromStr>(mut self, name: &'static str) -> PathSpec<Add2<P, R![T]>>
+    where P: Add<R![T]> {
         assert! { !self.contains_catch_all(),
             "path spec: cannot specify more than one catch-all",
         }
@@ -423,8 +421,8 @@ impl<P> PathSpec<P> {
     ///
     /// # Panics
     /// This panics if the path spec already contains a query parameter with the same `name`.
-    pub fn query<T: FromStr>(mut self, name: &'static str) -> PathSpec<Add2<P, Hlist![T]>>
-    where P: Add<Hlist![T]> {
+    pub fn query<T: FromStr>(mut self, name: &'static str) -> PathSpec<Add2<P, R![T]>>
+    where P: Add<R![T]> {
         assert! { !self.contains_query(name),
             "path spec: duplicate query param {:?}",
             name,
@@ -440,12 +438,9 @@ impl<P> PathSpec<P> {
     /// This panics if `other` is non-empty (except for query parameters) and `self` already
     /// contains a catch-all parameter, or if `other` contains query parameters that already
     /// exist in `self`.
-    pub(super) fn append<_P>(
-        mut self,
-        mut other: PathSpec<_P>,
-    ) -> PathSpec<Add2<P, Hlist![Parsed<_P>]>>
+    pub(super) fn append<_P>(mut self, mut other: PathSpec<_P>) -> PathSpec<Add2<P, R![Parsed<_P>]>>
     where
-        P: Add<Hlist![Parsed<_P>]>,
+        P: Add<R![Parsed<_P>]>,
         _P: Parser<Segment>,
     {
         assert! { other.segs.is_empty() || !self.contains_catch_all(),
@@ -927,7 +922,7 @@ fn find_wildcard(path: &str) -> Option<(usize, &str, bool)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        super::{access, path},
+        super::{path, zoom},
         *,
     };
     use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
@@ -998,8 +993,8 @@ mod tests {
         let p = path!["abc" / x: u32 / "cba" / y: String];
         let ps = parse_params(&p, &path, None).unwrap();
 
-        assert_eq!(*access!(&ps.x), x);
-        assert_eq!(*access!(&ps.y), y);
+        assert_eq!(*zoom!(&ps.x), x);
+        assert_eq!(*zoom!(&ps.y), y);
     }
 
     #[quickcheck]
@@ -1010,8 +1005,8 @@ mod tests {
         let p = path!["abc" / x: u32 / *rest: String];
         let ps = parse_params(&p, &path, None).unwrap();
 
-        assert_eq!(*access!(&ps.x), x);
-        assert_eq!(*access!(&ps.rest), rest);
+        assert_eq!(*zoom!(&ps.x), x);
+        assert_eq!(*zoom!(&ps.rest), rest);
     }
 
     #[quickcheck]
@@ -1019,19 +1014,19 @@ mod tests {
         let q = format!("p1={}", a);
         let spec = path![? p1: u8];
         let ps = parse_params(&spec, "/", Some(&q)).unwrap();
-        assert_eq!(*access!(&ps.p1), a);
+        assert_eq!(*zoom!(&ps.p1), a);
 
         let encoded = utf8_percent_encode(&c, NON_ALPHANUMERIC);
         let q = format!("p1={}&p2={}", b, encoded);
         let spec = path![? p1: u32, p2: String];
         let ps = parse_params(&spec, "/", Some(&q)).unwrap();
-        assert_eq!(*access!(&ps.p1), b);
-        assert_eq!(*access!(&ps.p2), c);
+        assert_eq!(*zoom!(&ps.p1), b);
+        assert_eq!(*zoom!(&ps.p2), c);
 
         let q = format!("p2={}&p1={}", encoded, b);
         let ps = parse_params(&spec, "/", Some(&q)).unwrap();
-        assert_eq!(*access!(&ps.p1), b);
-        assert_eq!(*access!(&ps.p2), c);
+        assert_eq!(*zoom!(&ps.p1), b);
+        assert_eq!(*zoom!(&ps.p2), c);
     }
 
     #[test]

@@ -55,10 +55,10 @@ impl<S: Stream<Item = Vec<Event>>> EventStream<S> {
     /// use hyperbole::{
     ///     path,
     ///     reply::sse::{Event, EventStream},
-    ///     Ctx, Hlist,
+    ///     Ctx, R,
     /// };
     ///
-    /// let _ctx = Ctx::default().get(path!["my-first-event-stream"], |cx: Hlist![]| async {
+    /// let _ctx = Ctx::default().get(path!["my-first-event-stream"], |cx: R![]| async {
     ///     let events = stream::iter(Some(vec![
     ///         Event::comment("this is an event"),
     ///         Event::id("neato"),
@@ -85,11 +85,11 @@ impl<S: Stream<Item = Vec<Event>>> EventStream<Padded<S>> {
     /// use hyperbole::{
     ///     path,
     ///     reply::sse::{Event, EventStream},
-    ///     Ctx, Hlist,
+    ///     Ctx, R,
     /// };
     /// use std::time::Duration;
     ///
-    /// let _ctx = Ctx::default().get(path!["my-first-event-stream"], |cx: Hlist![]| async {
+    /// let _ctx = Ctx::default().get(path!["my-first-event-stream"], |cx: R![]| async {
     ///     let events = stream::iter(Some(vec![
     ///         Event::comment("this is an event"),
     ///         Event::id("neato"),
@@ -179,9 +179,9 @@ impl Event {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{record, reply::sse::Event};
+    /// use hyperbole::{r, reply::sse::Event};
     ///
-    /// let _ = Event::jsonr(&record![x = 4, y = 5, z = "hello world"]);
+    /// let _ = Event::jsonr(&r![x = 4, y = 5, z = "hello world"]);
     /// ```
     pub fn jsonr<'a, T: IsoEncode<'a>>(payload: &'a T) -> Self {
         Self::json(&payload.as_repr())

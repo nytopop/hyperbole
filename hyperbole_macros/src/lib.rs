@@ -1,6 +1,6 @@
 //! Procedural macros for hyperbole.
 //!
-//! The macros exported here are documented in [hyperbole].
+//! The macros exported here are documented in [hyperbole][crate@hyperbole].
 #![warn(rust_2018_idioms)]
 use proc_macro::TokenStream;
 use quote::quote;
@@ -31,7 +31,7 @@ pub fn record_args(_: TokenStream, item: TokenStream) -> TokenStream {
                 Pat::Ident(ident) => match format!("{}", ident.ident) {
                     id if !id.starts_with('_') => {
                         arg_is_field[i] = true;
-                        quote!(::hyperbole::f![#ident : #ty])
+                        quote!(#ident : #ty)
                     }
                     _ => quote!(#ty),
                 },
@@ -78,7 +78,7 @@ pub fn record_args(_: TokenStream, item: TokenStream) -> TokenStream {
 
     let output = quote!(
         #fn_async fn #fn_name#fn_generics(
-            __cx_hyperbole_record_args_arg: ::hyperbole::Hlist![#fn_args_ty],
+            __cx_hyperbole_record_args_arg: ::hyperbole::R![#fn_args_ty],
         ) #fn_ret_ty {
             #fn_item
 

@@ -12,59 +12,59 @@ use std::{
     str::FromStr,
 };
 
-/// Access a [named field][field::Field] in an anonymous record.
+/// Access a [named field][field::Field] in an hlist.
 ///
-/// # First form: evaluates to a statement that moves a record field into a variable
-/// Immutable: `access!(new_variable = my_record.field_name)`
+/// # First form: evaluates to a statement that moves an hlist field into a variable
+/// Immutable: `zoom!(new_variable = my_record.field_name)`
 ///
-/// Mutable: `access!(mut new_variable = my_record.field_name)`
+/// Mutable: `zoom!(mut new_variable = my_record.field_name)`
 ///
 /// The result will be a *statement* that extracts a field, binds its value to the specified
-/// identifier, and shadows the original record with any remaining fields.
+/// identifier, and shadows the original hlist with any remaining fields.
 ///
-/// The new record will be declared as `mut` in all cases.
+/// The new hlist will be declared as `mut` in all cases.
 ///
 /// ```
-/// use hyperbole::{access, record};
+/// use hyperbole::{r, zoom, R};
 ///
-/// let rec = record![x = 1000, y = "hello world"];
+/// let rec = r![x = 1000, y = "hello world"];
 ///
-/// access!(s = rec.y);
+/// zoom!(s = rec.y);
 /// assert_eq!(s, "hello world");
 ///
-/// // NOTE: 'rec' is now eqivalent to 'let mut rec = record![x: 1000]'
+/// // NOTE: 'rec' is now eqivalent to 'let mut rec = r![x = 1000]'
 ///
-/// access!(n = rec.x);
+/// zoom!(n = rec.x);
 /// assert_eq!(n, 1000);
 ///
 /// // NOTE: 'rec' is now empty and contains no fields
-/// let _: record![] = rec;
+/// let _: R![] = rec;
 /// ```
 ///
 /// # Second form: evaluates to an expression that borrows a field
-/// For immutable borrows: `access!(&my_record.field_name)`
+/// For immutable borrows: `zoom!(&my_record.field_name)`
 ///
-/// For mutable borrows: `access!(&mut my_record.field_name)`
+/// For mutable borrows: `zoom!(&mut my_record.field_name)`
 ///
 /// ```
-/// use hyperbole::{access, record};
+/// use hyperbole::{r, zoom, R};
 ///
-/// let mut rec = record![x = 1000, y = "hello world"];
+/// let mut rec = r![x = 1000, y = "hello world"];
 ///
-/// let _: &u64 = access!(&rec.x);
-/// let _: &mut u64 = access!(&mut rec.x);
+/// let _: &u64 = zoom!(&rec.x);
+/// let _: &mut u64 = zoom!(&mut rec.x);
 ///
-/// assert_eq!(1000, *access!(&rec.x));
-/// assert_eq!("hello world", *access!(&rec.y));
+/// assert_eq!(1000, *zoom!(&rec.x));
+/// assert_eq!("hello world", *zoom!(&rec.y));
 ///
-/// *access!(&mut rec.y) = "changed";
-/// assert_eq!("changed", *access!(&rec.y));
+/// *zoom!(&mut rec.y) = "changed";
+/// assert_eq!("changed", *zoom!(&rec.y));
 ///
 /// // the type and mutability of 'rec' has not changed
-/// let _: record![x: u64, y: &str] = rec;
+/// let _: R![x: u64, y: &str] = rec;
 /// ```
 #[macro_export]
-macro_rules! access {
+macro_rules! zoom {
     ($var:ident = $rec:ident . $field:ident) => {
         #[allow(unused_mut)]
         let (val, mut $rec) = $rec.pluck::<$crate::f![$field], _>();
@@ -86,89 +86,154 @@ macro_rules! access {
     };
 }
 
-/// Expands to either the type of an anonymous record, or a (~consty) expression that evaluates
-/// to an instantiated record.
+/// Expands to the type of an hlist that may contain named fields.
 ///
-/// A record is simply an hlist that contains [named fields][field::Field].
+/// [Named fields][field::Field] are used to disambiguate elements of the same type, as most logic
+/// in this crate depends on types being unique within hlists.
 ///
-/// That is, `record![a: u32, b: u32]` is shorthand for `Hlist![f![a: u32], f![b: u32]]`, and
-/// `record![a = 4, b = 5]` is shorthand for `hlist![f![a = 4], f![b = 5]]`.
+/// Any invocation may contain an arbitrary number of comma separated elements of the form `Type`
+/// or `name: Type`. Optionally, `...Type` may be added to the end in order to append the elements
+/// of another hlist.
 ///
-/// The syntax is equivalent to [f!], but allows for multiple fields of the same form to be
-/// provided as a comma separated list.
+/// The [r!] macro may be used to instantiate an hlist value.
 ///
+/// # Examples
 /// ```
-/// use hyperbole::{f, record};
+/// use frunk_core::hlist::{HCons, HNil};
+/// use hyperbole::{f, R};
+/// #
+/// # macro_rules! assert_type_eq {
+/// #     ($t1:ty, $t2:ty) => {{
+/// #         fn check(mut t1: $t1, t2: $t2) {
+/// #             t1 = t2;
+/// #         }
+/// #     }};
+/// # }
 ///
-/// let mut one = record![a = 2, b = 4, c = "hi"];
+/// type T = R![u16, u32, u64];
+/// type _T = HCons<u16, HCons<u32, HCons<u64, HNil>>>;
+/// assert_type_eq!(T, _T);
 ///
-/// // one is Copy because a, b, and c are Copy:
-/// let two: record![a, b, c] = one;
+/// type U = R![x: u16, y: u32, z: u64];
+/// type _U = HCons<f![x: u16], HCons<f![y: u32], HCons<f![z: u64], HNil>>>;
+/// assert_type_eq!(U, _U);
 ///
-/// // types may be specified like in f!:
-/// let and: record![a: u32, b: i32, c: &str] = one;
+/// type V = R![u16, x: u32, u64];
+/// type _V = HCons<u16, HCons<f![x: u32], HCons<u64, HNil>>>;
+/// assert_type_eq!(V, _V);
 ///
-/// // accessing fields happens exactly like w/ hlists (as records are hlists):
-/// let a: &f![a] = one.get();
-/// assert_eq!(2, **a);
-///
-/// let a: &mut f![a] = one.get_mut();
-/// **a = 45;
-///
-/// let a: f![a] = one.pluck().0;
-/// assert_eq!(45, *a);
-///
-/// // records (ie hlists) also impl Into for tuples, which may be easier to use:
-/// let (a, b, c) = one.into();
-/// assert_eq!(45, *a);
-/// assert_eq!(4, *b);
-/// assert_eq!("hi", *c);
-/// ```
-///
-/// # Partial records
-/// A group of tokens surrounded by brackets (`[ ]`) may be passed after all named fields to
-/// specify additional unnamed fields. Everything within said brackets will be appended to the
-/// [Hlist!] or [hlist!] invocation unchanged.
-///
-/// ```
-/// use hyperbole::{f, record, Hlist};
-///
-/// let my_record = record![a = 40, b = "hello", ["world"]];
-///
-/// let my_record_infer: record![a, b, [&str]] = my_record;
-/// let my_record_concr: record![a: u32, b: &str, [&str]] = my_record;
-///
-/// let my_record_hlist_infer: Hlist![f![a], f![b], &str] = my_record;
-/// let my_record_hlist_concr: Hlist![f![a: u32], f![b: &str], &str] = my_record;
+/// type W = R![foo: String, ...T];
+/// type _W = HCons<f![foo: String], HCons<u16, HCons<u32, HCons<u64, HNil>>>>;
+/// assert_type_eq!(W, _W);
 /// ```
 #[macro_export]
-macro_rules! record {
+macro_rules! R {
     () => {
-        $crate::hlist::HNil
+        $crate::frunk_core::hlist::HNil
     };
 
-    ($( $name:ident ),+ $(,)?) => {
-        $crate::Hlist![$( $crate::f![$name] ),+]
+    ($name:ident : $type:ty) => {
+        $crate::frunk_core::hlist::HCons<
+            $crate::field::Field::<$type, { stringify!($name) }>,
+            $crate::frunk_core::hlist::HNil,
+        >
     };
 
-    ($( $name:ident : $type:ty ),+ $(,)?) => {
-        $crate::Hlist![$( $crate::f![$name : $type] ),+]
+    ($name:ident : $type:ty , $( $tok:tt )*) => {
+        $crate::frunk_core::hlist::HCons<
+            $crate::field::Field::<$type, { stringify!($name) }>,
+            $crate::R![$( $tok )*],
+        >
     };
 
-    ($( $name:ident = $val:expr ),+ $(,)?) => {
-        $crate::hlist![$( $crate::f![$name = $val] ),+]
+    ($type:ty) => {
+        $crate::frunk_core::hlist::HCons<$type, $crate::frunk_core::hlist::HNil>
     };
 
-    ($( $name:ident ),+ , [ $( $tok:tt )* ]) => {
-        $crate::Hlist![$( $crate::f![$name] ),+ , $( $tok )*]
+    ($type:ty , $( $tok:tt )*) => {
+        $crate::frunk_core::hlist::HCons<$type, $crate::R![$( $tok )*]>
     };
 
-    ($( $name:ident : $type:ty ),+ , [ $( $tok:tt )* ]) => {
-        $crate::Hlist![$( $crate::f![$name : $type] ),+ , $( $tok )*]
+    (... $tail:ty) => {
+        $tail
+    }
+}
+
+/// Expands to an hlist that may contain named fields.
+///
+/// [Named fields][field::Field] are used to disambiguate elements of the same type, as most logic
+/// in this crate depends on types being unique within hlists.
+///
+/// Any invocation may contain an arbitrary number of comma separated elements of the form `expr`
+/// or `name = expr`. Optionally, `...expr` may be added to the end in order to append the elements
+/// of another hlist.
+///
+/// The [R!] macro may be used to name the type of the produced hlist.
+///
+/// # Examples
+/// As hlists are effectively singly linked lists at the type level, the simplest way to refer to
+/// an individual element is to follow the struct fields directly:
+///
+/// ```
+/// use hyperbole::r;
+///
+/// let rec = r![1, 2, 3];
+///
+/// assert_eq!(rec.head, 1);
+/// assert_eq!(rec.tail.head, 2);
+/// assert_eq!(rec.tail.tail.head, 3);
+/// ```
+///
+/// Alternatively, they can be converted into tuples:
+///
+/// ```
+/// use hyperbole::r;
+///
+/// let rec = r![1, "foo", "bar".to_owned()];
+/// let (a, b, c) = rec.into();
+///
+/// assert_eq!(a, 1);
+/// assert_eq!(b, "foo");
+/// assert_eq!(c, "bar");
+/// ```
+///
+/// See [HCons][frunk_core::hlist::HCons] for more advanced usage.
+#[macro_export]
+macro_rules! r {
+    () => {
+        $crate::frunk_core::hlist::HNil
     };
 
-    ($( $name:ident = $val:expr ),+ , [ $( $tok:tt )* ]) => {
-        $crate::hlist![$( $crate::f![$name = $val] ),+ , $( $tok )*]
+    (... $tail:expr) => {
+        $tail
+    };
+
+    ($name:ident = $value:expr) => {
+        $crate::frunk_core::hlist::HCons {
+            head: $crate::field::Field::<_, { stringify!($name) }>::new($value),
+            tail: $crate::frunk_core::hlist::HNil,
+        }
+    };
+
+    ($name:ident = $value:expr , $( $tok:tt )*) => {
+        $crate::frunk_core::hlist::HCons {
+            head: $crate::field::Field::<_, { stringify!($name) }>::new($value),
+            tail: $crate::r![$( $tok )*],
+        }
+    };
+
+    ($value:expr) => {
+        $crate::frunk_core::hlist::HCons {
+            head: $value,
+            tail: $crate::frunk_core::hlist::HNil,
+        }
+    };
+
+    ($value:expr , $( $tok:tt )*) => {
+        $crate::frunk_core::hlist::HCons {
+            head: $value,
+            tail: $crate::r![$( $tok )*],
+        }
     };
 }
 
@@ -228,7 +293,7 @@ macro_rules! f {
 
 /// A named value where the name is lifted to the type level, analagous to a struct field.
 ///
-/// This struct is intended to be named and instantiated via the [f!] or [record!] macros.
+/// This struct is intended to be named and instantiated via the [f!] or [r!] / [R!] macros.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Field<T, const NAME: &'static str> {
     inner: T,
@@ -445,10 +510,10 @@ pub struct RCons<T, Tail> {
 
 /// Types with an alternate representation that is [Serialize].
 ///
-/// For [record!]s, the serialization format is equivalent to a struct with the same fields:
+/// For hlists, the serialization format is equivalent to a struct with the same fields:
 ///
 /// ```
-/// use hyperbole::{field::IsoEncode, record};
+/// use hyperbole::{field::IsoEncode, r};
 /// use serde::Serialize;
 ///
 /// #[derive(Serialize)]
@@ -466,7 +531,7 @@ pub struct RCons<T, Tail> {
 /// .unwrap();
 ///
 /// let my_req_r = serde_json::to_string(
-///     &record! {
+///     &r! {
 ///         a = "hello-worldo".to_string(),
 ///         b = 32324,
 ///         c = 345345.34,
@@ -512,10 +577,10 @@ impl<'a, T: Serialize + 'a, Tail: IsoEncode<'a>> IsoEncode<'a> for HCons<T, Tail
 
 /// Types with an alternate representation that is [DeserializeOwned].
 ///
-/// For [record!]s, the deserialization format is equivalent to a struct with the same fields:
+/// For hlists, the deserialization format is equivalent to a struct with the same fields:
 ///
 /// ```
-/// use hyperbole::{access, field::IsoDecode, record};
+/// use hyperbole::{field::IsoDecode, zoom, R};
 /// use serde::Deserialize;
 ///
 /// #[derive(Deserialize)]
@@ -529,13 +594,13 @@ impl<'a, T: Serialize + 'a, Tail: IsoEncode<'a>> IsoEncode<'a> for HCons<T, Tail
 ///
 /// let my_req: MyRequest = serde_json::from_str(repr).unwrap();
 ///
-/// let my_req_r: record![a: String, b: u32, c: f32] = serde_json::from_str(repr)
+/// let my_req_r: R![a: String, b: u32, c: f32] = serde_json::from_str(repr)
 ///     .map(IsoDecode::from_repr)
 ///     .unwrap();
 ///
-/// assert_eq!(my_req.a, *access![&my_req_r.a]);
-/// assert_eq!(my_req.b, *access![&my_req_r.b]);
-/// assert_eq!(my_req.c, *access![&my_req_r.c]);
+/// assert_eq!(my_req.a, *zoom![&my_req_r.a]);
+/// assert_eq!(my_req.b, *zoom![&my_req_r.b]);
+/// assert_eq!(my_req.c, *zoom![&my_req_r.c]);
 /// ```
 pub trait IsoDecode {
     /// The representation.
@@ -597,8 +662,8 @@ mod tests {
 
     #[quickcheck]
     fn serde_iso_roundtrips(x: u32, y: String, z: f32) {
-        ser_de_ser(record![x = x, y = y.clone()]);
-        ser_de_ser(record![y = y, x = x, z = z]);
-        de_ser_de::<record![x: u32, y: String, z: f32]>(r#"{"x":32,"y":"neat","z":4.4}"#);
+        ser_de_ser(r![x = x, y = y.clone()]);
+        ser_de_ser(r![y = y, x = x, z = z]);
+        de_ser_de::<R![x: u32, y: String, z: f32]>(r#"{"x":32,"y":"neat","z":4.4}"#);
     }
 }

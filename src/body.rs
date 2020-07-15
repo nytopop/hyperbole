@@ -1,11 +1,7 @@
 //! Helpers for parsing request bodies.
-use super::{field::IsoDecode, reply::Reply, Response};
+use super::{field::IsoDecode, r, reply::Reply, Response, R};
 use bytes::buf::BufExt;
-use frunk_core::{
-    hlist,
-    hlist::{HCons, HList},
-    Hlist,
-};
+use frunk_core::hlist::{HCons, HList};
 use headers::{ContentType, HeaderMapExt};
 use http::HeaderMap;
 use hyper::{body::aggregate, Body, StatusCode};
@@ -71,12 +67,12 @@ bad_request_display! { JsonBodyError }
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
 /// [Ctx::try_then]: super::Ctx::try_then
-pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], JsonBodyError> {
+pub async fn json<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], JsonBodyError> {
     let bodyr = aggregate(cx.head).await?.reader();
 
     serde_json::from_reader(bodyr)
         .map_err(JsonBodyError::Json)
-        .map(|t| hlist![t])
+        .map(|t| r![t])
 }
 
 /// Deserialize an anonymous record from a json request body.
@@ -91,7 +87,7 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Js
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::jsonr, path, record, record_args, Ctx};
+/// use hyperbole::{body::jsonr, path, record_args, Ctx, R};
 ///
 /// #[record_args]
 /// async fn the_thing(x: u32, y: String, z: f64) -> &'static str {
@@ -100,15 +96,15 @@ pub async fn json<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Js
 ///
 /// let _ctx = Ctx::default()
 ///     // inline with get_with:
-///     .get_with(path!["the-thing"], jsonr::<record![x, y, z]>, the_thing)
+///     .get_with(path!["the-thing"], jsonr::<R![x: _, y: _, z: _]>, the_thing)
 ///     // or as a middleware:
-///     .try_then(jsonr::<record![x, y]>)
+///     .try_then(jsonr::<R![x: _, y: _]>)
 ///     .get(path!["the-thing" / z: f64], the_thing);
 /// ```
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
 /// [Ctx::try_then]: super::Ctx::try_then
-pub async fn jsonr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, JsonBodyError> {
+pub async fn jsonr<T: IsoDecode>(cx: R![Body]) -> Result<T, JsonBodyError> {
     let bodyr = aggregate(cx.head).await?.reader();
 
     serde_json::from_reader(bodyr)
@@ -160,12 +156,12 @@ bad_request_display! { FormBodyError }
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
 /// [Ctx::try_then]: super::Ctx::try_then
-pub async fn form<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], FormBodyError> {
+pub async fn form<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], FormBodyError> {
     let bodyr = aggregate(cx.head).await?.reader();
 
     serde_urlencoded::from_reader(bodyr)
         .map_err(FormBodyError::Form)
-        .map(|t| hlist![t])
+        .map(|t| r![t])
 }
 
 /// Deserialize an anonymous record from an `x-www-form-urlencoded` request body.
@@ -180,7 +176,7 @@ pub async fn form<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Fo
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::formr, path, record, record_args, Ctx};
+/// use hyperbole::{body::formr, path, record_args, Ctx, R};
 ///
 /// #[record_args]
 /// async fn the_thing(x: u32, y: String, z: f64) -> &'static str {
@@ -189,15 +185,15 @@ pub async fn form<T: DeserializeOwned>(cx: Hlist![Body]) -> Result<Hlist![T], Fo
 ///
 /// let _ctx = Ctx::default()
 ///     // inline with get_with:
-///     .get_with(path!["the-thing"], formr::<record![x, y, z]>, the_thing)
+///     .get_with(path!["the-thing"], formr::<R![x: _, y: _, z: _]>, the_thing)
 ///     // or as a middleware:
-///     .try_then(formr::<record![x, y]>)
+///     .try_then(formr::<R![x: _, y: _]>)
 ///     .get(path!["the-thing" / z: f64], the_thing);
 /// ```
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
 /// [Ctx::try_then]: super::Ctx::try_then
-pub async fn formr<T: IsoDecode>(cx: Hlist![Body]) -> Result<T, FormBodyError> {
+pub async fn formr<T: IsoDecode>(cx: R![Body]) -> Result<T, FormBodyError> {
     let bodyr = aggregate(cx.head).await?.reader();
 
     serde_urlencoded::from_reader(bodyr)
@@ -262,7 +258,7 @@ bad_request_display! { AutoBodyError }
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
 /// [Ctx::try_then]: super::Ctx::try_then
-pub async fn auto<T>(cx: Hlist![Body, HeaderMap]) -> Result<Hlist![T, HeaderMap], AutoBodyError>
+pub async fn auto<T>(cx: R![Body, HeaderMap]) -> Result<R![T, HeaderMap], AutoBodyError>
 where T: DeserializeOwned {
     let (head, tail) = (cx.head, cx.tail);
 
@@ -299,7 +295,7 @@ where T: DeserializeOwned {
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{body::autor, path, record, record_args, Ctx};
+/// use hyperbole::{body::autor, path, record_args, Ctx, R};
 ///
 /// #[record_args]
 /// async fn the_thing(x: u32, y: String, z: f64) -> &'static str {
@@ -308,15 +304,15 @@ where T: DeserializeOwned {
 ///
 /// let _ctx = Ctx::default()
 ///     // inline with get_with:
-///     .get_with(path!["the-thing"], autor::<record![x, y, z]>, the_thing)
+///     .get_with(path!["the-thing"], autor::<R![x: _, y: _, z: _]>, the_thing)
 ///     // or as a middleware:
-///     .try_then(autor::<record![x, y]>)
+///     .try_then(autor::<R![x: _, y: _]>)
 ///     .get(path!["the-thing" / z: f64], the_thing);
 /// ```
 ///
 /// [Ctx::handle_with]: super::Ctx::handle_with
 /// [Ctx::try_then]: super::Ctx::try_then
-pub async fn autor<T>(cx: Hlist![Body, HeaderMap]) -> Result<HCons<HeaderMap, T>, AutoBodyError>
+pub async fn autor<T>(cx: R![Body, HeaderMap]) -> Result<HCons<HeaderMap, T>, AutoBodyError>
 where T: HList + IsoDecode {
     let (head, tail) = (cx.head, cx.tail);
 
@@ -330,13 +326,11 @@ where T: HList + IsoDecode {
     match mime.subtype() {
         mime::JSON => serde_json::from_reader(bodyr)
             .map_err(AutoBodyError::Json)
-            .map(T::from_repr)
-            .map(|t| t.prepend(tail.head)),
+            .map(|t| T::from_repr(t).prepend(tail.head)),
 
         mime::WWW_FORM_URLENCODED => serde_urlencoded::from_reader(bodyr)
             .map_err(AutoBodyError::Form)
-            .map(T::from_repr)
-            .map(|t| t.prepend(tail.head)),
+            .map(|t| T::from_repr(t).prepend(tail.head)),
 
         _ => Err(AutoBodyError::UnknownFormat(mime)),
     }

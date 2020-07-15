@@ -1,6 +1,5 @@
 //! Middleware combinators.
-use super::{field::Field, reply::Reply, Response};
-use frunk_core::Hlist;
+use super::{field::Field, reply::Reply, Response, R};
 use headers::{Cookie, Header, HeaderMapExt};
 use http::{header::HeaderName, HeaderMap, HeaderValue};
 use hyper::StatusCode;
@@ -31,15 +30,15 @@ impl Reply for HeaderError {
 /// # Examples
 /// ```
 /// use hyper::header::{HeaderValue, ACCEPT};
-/// use hyperbole::{mw, Ctx, Hlist};
+/// use hyperbole::{mw, Ctx, R};
 ///
 /// let _ctx = Ctx::default()
 ///     .try_map(mw::header(ACCEPT))
-///     .map(|cx: Hlist![HeaderValue]| cx);
+///     .map(|cx: R![HeaderValue]| cx);
 /// ```
 pub fn header(
     name: HeaderName,
-) -> impl Fn(Hlist![HeaderMap]) -> Result<Hlist![HeaderValue, HeaderMap], HeaderError> {
+) -> impl Fn(R![HeaderMap]) -> Result<R![HeaderValue, HeaderMap], HeaderError> {
     move |cx| match cx.head.get(&name).cloned() {
         Some(h) => Ok(cx.prepend(h)),
         None => Err(HeaderError(name.clone())),
@@ -56,15 +55,15 @@ pub fn header(
 /// # Examples
 /// ```
 /// use hyper::header::{HeaderValue, ACCEPT};
-/// use hyperbole::{mw, Ctx, Hlist};
+/// use hyperbole::{mw, Ctx, R};
 ///
 /// let _ctx = Ctx::default()
 ///     .map(mw::header_opt(ACCEPT))
-///     .map(|cx: Hlist![Option<HeaderValue>]| cx);
+///     .map(|cx: R![Option<HeaderValue>]| cx);
 /// ```
 pub fn header_opt(
     name: HeaderName,
-) -> impl Fn(Hlist![HeaderMap]) -> Hlist![Option<HeaderValue>, HeaderMap] {
+) -> impl Fn(R![HeaderMap]) -> R![Option<HeaderValue>, HeaderMap] {
     move |cx| {
         let h = cx.head.get(&name).cloned();
         cx.prepend(h)
@@ -78,17 +77,17 @@ pub fn header_opt(
 /// # Examples
 /// ```
 /// use headers::{authorization::Basic, Authorization};
-/// use hyperbole::{mw, Ctx, Hlist};
+/// use hyperbole::{mw, Ctx, R};
 ///
 /// let _ctx = Ctx::default()
 ///     .try_map(mw::typed_header::<Authorization<Basic>>)
-///     .map(|cx: Hlist![Authorization<Basic>]| {
+///     .map(|cx: R![Authorization<Basic>]| {
 ///         let user = cx.head.0.username();
 ///         let pass = cx.head.0.password();
 ///         cx
 ///     });
 /// ```
-pub fn typed_header<H: Header>(cx: Hlist![HeaderMap]) -> Result<Hlist![H, HeaderMap], HeaderError> {
+pub fn typed_header<H: Header>(cx: R![HeaderMap]) -> Result<R![H, HeaderMap], HeaderError> {
     match cx.head.typed_get() {
         Some(h) => Ok(cx.prepend(h)),
         None => Err(HeaderError(H::name().clone())),
@@ -102,16 +101,16 @@ pub fn typed_header<H: Header>(cx: Hlist![HeaderMap]) -> Result<Hlist![H, Header
 /// # Examples
 /// ```
 /// use headers::ContentType;
-/// use hyperbole::{mw, Ctx, Hlist};
+/// use hyperbole::{mw, Ctx, R};
 ///
 /// let _ctx = Ctx::default().map(mw::typed_header_opt::<ContentType>).map(
-///     |cx: Hlist![Option<ContentType>]| match cx.get() {
+///     |cx: R![Option<ContentType>]| match cx.get() {
 ///         Some(ctype) => cx,
 ///         None => cx,
 ///     },
 /// );
 /// ```
-pub fn typed_header_opt<H: Header>(cx: Hlist![HeaderMap]) -> Hlist![Option<H>, HeaderMap] {
+pub fn typed_header_opt<H: Header>(cx: R![HeaderMap]) -> R![Option<H>, HeaderMap] {
     let h = cx.head.typed_get();
     cx.prepend(h)
 }
@@ -147,18 +146,18 @@ impl Reply for CookieError {
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{mw, record, Ctx};
+/// use hyperbole::{mw, Ctx, R};
 ///
-/// let _ctx = Ctx::default().try_map(mw::cookie::<"some_cookie">).map(
-///     |cx: record![some_cookie: String]| {
+/// let _ctx = Ctx::default()
+///     .try_map(mw::cookie::<"foobar">)
+///     .map(|cx: R![foobar: String]| {
 ///         println!("cookie value is {:?}", cx.head);
 ///         cx
-///     },
-/// );
+///     });
 /// ```
 pub fn cookie<const NAME: &'static str>(
-    cx: Hlist![HeaderMap],
-) -> Result<Hlist![Field<String, NAME>, HeaderMap], CookieError> {
+    cx: R![HeaderMap],
+) -> Result<R![Field<String, NAME>, HeaderMap], CookieError> {
     let cookie = (cx.head)
         .typed_get::<Cookie>()
         .ok_or(CookieError::MissingHeader)?;
@@ -178,18 +177,18 @@ pub fn cookie<const NAME: &'static str>(
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{mw, record, Ctx};
+/// use hyperbole::{mw, Ctx, R};
 ///
 /// let _ctx = Ctx::default().map(mw::cookie_opt::<"some_cookie">).map(
-///     |cx: record![some_cookie: Option<String>]| {
+///     |cx: R![some_cookie: Option<String>]| {
 ///         println!("cookie value is {:?}", cx.head);
 ///         cx
 ///     },
 /// );
 /// ```
 pub fn cookie_opt<const NAME: &'static str>(
-    cx: Hlist![HeaderMap],
-) -> Hlist![Field<Option<String>, NAME>, HeaderMap] {
+    cx: R![HeaderMap],
+) -> R![Field<Option<String>, NAME>, HeaderMap] {
     let cookie = (cx.head)
         .typed_get::<Cookie>()
         .and_then(|c| c.get(NAME).map(|v| v.to_owned()));

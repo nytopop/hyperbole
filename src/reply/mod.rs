@@ -1,5 +1,5 @@
 //! Helpers for replying to requests.
-use super::{f, field::IsoEncode, Hlist, Response};
+use super::{field::IsoEncode, Response, R};
 use frunk_core::coproduct::{CNil, Coproduct};
 use headers::{Header, HeaderMapExt};
 use http::{HeaderMap, Method, StatusCode, Uri};
@@ -164,12 +164,12 @@ pub fn json<T: Serialize>(value: &T) -> Response {
         .unwrap()
 }
 
-/// Returns a json [Response] from an anonymous record. All fields must be [Serialize].
+/// Returns a json [Response] from an hlist of [Serialize] named fields.
 ///
 /// ```
-/// use hyperbole::{record, reply};
+/// use hyperbole::{r, reply};
 ///
-/// let _ = reply::jsonr(&record![
+/// let _ = reply::jsonr(&r![
 ///     a = "cool",
 ///     b = 44,
 ///     c = 3.03,
@@ -189,15 +189,15 @@ pub fn jsonr<'a, T: IsoEncode<'a>>(value: &'a T) -> Response {
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{f, hlist, path, record, reply, Ctx, Hlist};
+/// use hyperbole::{f, path, r, reply, Ctx, R};
 ///
 /// let _ctx = Ctx::default()
-///     .map(|_: Hlist![]| hlist!["this is my response"])
+///     .map(|_: R![]| r!["this is my response"])
 ///     .get(path!["i-want-my-str"], reply::extract::<&str>)
-///     .map(|_: Hlist![]| record![foo = "here is fresh foo"])
+///     .map(|_: R![]| r![foo = "here is fresh foo"])
 ///     .get(path!["unhand-me-a-foo"], reply::extract::<f![foo]>);
 /// ```
-pub async fn extract<T: Reply>(cx: Hlist![T]) -> T {
+pub async fn extract<T: Reply>(cx: R![T]) -> T {
     cx.head
 }
 
@@ -237,7 +237,7 @@ impl Reply for FsError {
 ///     .get(path!["b" / *extra: String], reply::filesystem("/opt"))
 ///     .collapse();
 /// ```
-pub fn filesystem(base_path: &str) -> impl Fn(Hlist![Method, Uri, HeaderMap]) -> FsFuture {
+pub fn filesystem(base_path: &str) -> impl Fn(R![Method, Uri, HeaderMap]) -> FsFuture {
     let root = PathBuf::from(base_path);
 
     move |cx| fs_inner(root.clone(), cx.head, Ok(cx.tail.head), cx.tail.tail.head)
@@ -248,18 +248,18 @@ pub fn filesystem(base_path: &str) -> impl Fn(Hlist![Method, Uri, HeaderMap]) ->
 ///
 /// # Examples
 /// ```
-/// use hyperbole::{path, record, reply, Ctx};
+/// use hyperbole::{path, r, reply, Ctx, R};
 ///
 /// let _ctx = Ctx::default()
 ///     // use a path! parser to extract `path: String` from the uri
 ///     .get(path!["css" / *path: String], reply::filesystem_path("/srv"))
 ///     // or populate `path: String` in a middleware
-///     .map(|cx: record![]| record![path = "an-image-file.jpg".to_owned()])
+///     .map(|cx: R![]| r![path = "an-image-file.jpg".to_owned()])
 ///     .get(path!["image"], reply::filesystem_path("/srv"));
 /// ```
 pub fn filesystem_path(
     base_path: &str,
-) -> impl Fn(Hlist![Method, f![path: String], HeaderMap]) -> FsFuture {
+) -> impl Fn(R![Method, path: String, HeaderMap]) -> FsFuture {
     let root = PathBuf::from(base_path);
 
     move |cx| {

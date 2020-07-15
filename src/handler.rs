@@ -1,10 +1,11 @@
 use super::{
     combinators::{Add2, Base, Link},
+    r,
     reply::Reply,
     tree::{Cluster, Params, Parser, PathSpec, Segment},
     Init, Response,
 };
-use frunk_core::{hlist, hlist::HNil};
+use frunk_core::hlist::HNil;
 use futures::future::{ready, BoxFuture, FutureExt, TryFutureExt};
 use hyper::{
     header::{CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS},
@@ -61,7 +62,7 @@ where
             Ok(ps) => ps,
         };
 
-        let state = hlist![
+        let state = r![
             body,
             p.method,
             p.uri,
