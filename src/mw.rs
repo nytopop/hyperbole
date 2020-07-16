@@ -196,7 +196,7 @@ pub fn cookie_opt<const NAME: &'static str>(
     cx.prepend(cookie.into())
 }
 
-/// Rename a named field in the request scoped state.
+/// Rename a named field in the request context.
 ///
 /// Use with [`Ctx::map`][super::Ctx::map].
 ///
@@ -215,4 +215,22 @@ pub fn rename<T, const OLD: &'static str, const NEW: &'static str>(
        Field<T, NEW>
    ] {
     r![cx.head.into_inner().into()]
+}
+
+/// Drop an element in the request context.
+///
+/// Use with [`Ctx::map`][super::Ctx::map].
+///
+/// # Examples
+/// ```
+/// use hyperbole::{mw, r, Ctx, R};
+///
+/// struct Thing;
+///
+/// let _ctx = Ctx::default()
+///     .map(|cx: R![]| r![Thing])
+///     .map(mw::drop::<Thing>);
+/// ```
+pub fn drop<T>(_: R![T]) -> R![] {
+    r![]
 }
