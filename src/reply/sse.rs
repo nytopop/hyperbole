@@ -47,7 +47,7 @@ impl<S: Stream<Item = Vec<Event>> + Send + 'static> Reply for EventStream<S> {
 impl<S: Stream<Item = Vec<Event>>> EventStream<S> {
     /// Create an sse stream.
     ///
-    /// Events within the same `Vec<Event>` will be reordered using a stable sort.
+    /// Events within the same `Vec<Event>` will be reordered by type using a stable sort.
     ///
     /// # Examples
     /// ```
@@ -76,7 +76,7 @@ impl<S: Stream<Item = Vec<Event>>> EventStream<S> {
 impl<S: Stream<Item = Vec<Event>>> EventStream<Padded<S>> {
     /// Create an sse stream that ensures at least one event is sent every `keepalive`.
     ///
-    /// Events within the same `Vec<Event>` will be reordered using a stable sort.
+    /// Events within the same `Vec<Event>` will be reordered by type using a stable sort.
     ///
     /// # Examples
     /// ```

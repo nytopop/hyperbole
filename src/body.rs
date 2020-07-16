@@ -39,7 +39,7 @@ bad_request_display! { JsonBodyError }
 
 /// Deserialize a value from a json request body.
 ///
-/// Use with [Ctx::handle_with] or [Ctx::try_then].
+/// Use with [`Ctx::handle_with`][super::Ctx::handle_with] or [`Ctx::try_then`][super::Ctx::try_then].
 ///
 /// # Examples
 /// ```
@@ -64,9 +64,6 @@ bad_request_display! { JsonBodyError }
 ///     .try_then(json::<ThingRequest>)
 ///     .get(uri!["the-thing" / "via-mw"], the_thing);
 /// ```
-///
-/// [Ctx::handle_with]: super::Ctx::handle_with
-/// [Ctx::try_then]: super::Ctx::try_then
 pub async fn json<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], JsonBodyError> {
     let bodyr = aggregate(cx.head).await?.reader();
 
@@ -83,7 +80,7 @@ pub async fn json<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], JsonBodyEr
 /// Any fields of the record will be merged into the context's state as if they were provided
 /// inline.
 ///
-/// Use with [Ctx::handle_with] or [Ctx::try_then].
+/// Use with [`Ctx::handle_with`][super::Ctx::handle_with] or [`Ctx::try_then`][super::Ctx::try_then].
 ///
 /// # Examples
 /// ```
@@ -101,9 +98,6 @@ pub async fn json<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], JsonBodyEr
 ///     .try_then(jsonr::<R![x: _, y: _]>)
 ///     .get(uri!["the-thing" / z: f64], the_thing);
 /// ```
-///
-/// [Ctx::handle_with]: super::Ctx::handle_with
-/// [Ctx::try_then]: super::Ctx::try_then
 pub async fn jsonr<T: IsoDecode>(cx: R![Body]) -> Result<T, JsonBodyError> {
     let bodyr = aggregate(cx.head).await?.reader();
 
@@ -128,7 +122,7 @@ bad_request_display! { FormBodyError }
 
 /// Deserialize a value from an `x-www-form-urlencoded` request body.
 ///
-/// Use with [Ctx::handle_with] or [Ctx::try_then].
+/// Use with [`Ctx::handle_with`][super::Ctx::handle_with] or [`Ctx::try_then`][super::Ctx::try_then].
 ///
 /// # Examples
 /// ```
@@ -153,9 +147,6 @@ bad_request_display! { FormBodyError }
 ///     .try_then(form::<ThingRequest>)
 ///     .get(uri!["the-thing" / "via-mw"], the_thing);
 /// ```
-///
-/// [Ctx::handle_with]: super::Ctx::handle_with
-/// [Ctx::try_then]: super::Ctx::try_then
 pub async fn form<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], FormBodyError> {
     let bodyr = aggregate(cx.head).await?.reader();
 
@@ -172,7 +163,7 @@ pub async fn form<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], FormBodyEr
 /// Any fields of the record will be merged into the context's state as if they were provided
 /// inline.
 ///
-/// Use with [Ctx::handle_with] or [Ctx::try_then].
+/// Use with [`Ctx::handle_with`][super::Ctx::handle_with] or [`Ctx::try_then`][super::Ctx::try_then].
 ///
 /// # Examples
 /// ```
@@ -190,9 +181,6 @@ pub async fn form<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], FormBodyEr
 ///     .try_then(formr::<R![x: _, y: _]>)
 ///     .get(uri!["the-thing" / z: f64], the_thing);
 /// ```
-///
-/// [Ctx::handle_with]: super::Ctx::handle_with
-/// [Ctx::try_then]: super::Ctx::try_then
 pub async fn formr<T: IsoDecode>(cx: R![Body]) -> Result<T, FormBodyError> {
     let bodyr = aggregate(cx.head).await?.reader();
 
@@ -230,7 +218,7 @@ bad_request_display! { AutoBodyError }
 /// Deserialize a value from the request body, using the `Content-Type` header to determine the
 /// serialization format.
 ///
-/// Use with [Ctx::handle_with] or [Ctx::try_then].
+/// Use with [`Ctx::handle_with`][super::Ctx::handle_with] or [`Ctx::try_then`][super::Ctx::try_then].
 ///
 /// # Examples
 /// ```
@@ -255,9 +243,6 @@ bad_request_display! { AutoBodyError }
 ///     .try_then(auto::<ThingRequest>)
 ///     .get(uri!["the-thing" / "via-mw"], the_thing);
 /// ```
-///
-/// [Ctx::handle_with]: super::Ctx::handle_with
-/// [Ctx::try_then]: super::Ctx::try_then
 pub async fn auto<T>(cx: R![Body, HeaderMap]) -> Result<R![T, HeaderMap], AutoBodyError>
 where T: DeserializeOwned {
     let (head, tail) = (cx.head, cx.tail);
@@ -291,7 +276,7 @@ where T: DeserializeOwned {
 /// Any fields of the record will be merged into the context's state as if they were provided
 /// inline.
 ///
-/// Use with [Ctx::handle_with] or [Ctx::try_then].
+/// Use with [`Ctx::handle_with`][super::Ctx::handle_with] or [`Ctx::try_then`][super::Ctx::try_then].
 ///
 /// # Examples
 /// ```
@@ -309,9 +294,6 @@ where T: DeserializeOwned {
 ///     .try_then(autor::<R![x: _, y: _]>)
 ///     .get(uri!["the-thing" / z: f64], the_thing);
 /// ```
-///
-/// [Ctx::handle_with]: super::Ctx::handle_with
-/// [Ctx::try_then]: super::Ctx::try_then
 pub async fn autor<T>(cx: R![Body, HeaderMap]) -> Result<HCons<HeaderMap, T>, AutoBodyError>
 where T: HList + IsoDecode {
     let (head, tail) = (cx.head, cx.tail);

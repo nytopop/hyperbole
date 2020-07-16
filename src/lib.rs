@@ -940,8 +940,8 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// Transform a single variant of the context's error type with a closure.
     ///
     /// This can be used to selectively modify only a single type of error. Note that if more than
-    /// one instance of the same error type may have occurred, this will only affect the most
-    /// recent of them.
+    /// one instance of the same error may have occurred, this will only affect the most recent of
+    /// them.
     ///
     /// # Examples
     /// ```
@@ -1040,8 +1040,8 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     /// let _ctx = Ctx::with_path(uri!["foo" / "bar" / baz: f64])
     ///     .get(uri!["doit"], doit)
     ///     .map(|cx: R![baz: _]| r![15])
-    ///     .get(uri!["more" / neat: u32], more)
     ///     .get(uri!["more"], more)
+    ///     .get(uri!["more" / neat: u32], more)
     ///     .get(uri!["more" / neat: u32 / "nested"], more)
     ///     .get(uri!["impl_reply"], using_impl);
     /// ```
@@ -1091,15 +1091,20 @@ impl<P: 'static, L: Sync + Send + Clone + 'static, S> Ctx<P, L, S> {
     ///
     /// # Examples
     /// ```
-    /// use hyperbole::{body::jsonr, uri, Ctx, R};
+    /// use hyperbole::{body::jsonr, record_args, uri, Ctx, R};
     ///
     /// async fn handle_abc(cx: R![a: u32, b: String, c: f64]) -> &'static str {
     ///     "neat"
     /// }
     ///
-    /// let _app = Ctx::default()
+    /// #[record_args]
+    /// async fn handle_cba(c: f64, b: String, a: u32) -> &'static str {
+    ///     "neat"
+    /// }
+    ///
+    /// let _ctx = Ctx::default()
     ///     .get_with(uri!["1" / a: u32], jsonr::<R![b: _, c: _]>, handle_abc)
-    ///     .get_with(uri!["2" / a: u32], jsonr::<R![b: _, c: _]>, handle_abc);
+    ///     .get_with(uri!["2" / a: u32], jsonr::<R![b: _, c: _]>, handle_cba);
     /// ```
     ///
     /// [handle]: Ctx::handle
