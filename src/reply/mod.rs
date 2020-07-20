@@ -268,7 +268,7 @@ pub fn filesystem_path(
     }
 }
 
-/// The opaque future returned by [filesystem] and [filesystem_path].
+/// The opaque [Future] returned by [filesystem] and [filesystem_path].
 pub type FsFuture = impl Future<Output = Result<Response, FsError>>;
 
 type UriRes = http::Result<Uri>;

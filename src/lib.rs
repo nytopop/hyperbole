@@ -167,7 +167,12 @@ pub type Init = R![
 /// # Examples
 /// ```no_run
 /// use hyper::{server::Server, Body};
-/// use hyperbole::{uri, App, R};
+/// use hyperbole::{record_args, uri, App, R};
+///
+/// #[record_args]
+/// async fn echo(param: u32, _body: Body) -> String {
+///     format!("param: {}, body: {:?}", param, _body)
+/// }
 ///
 /// #[tokio::main]
 /// async fn main() -> hyper::Result<()> {
@@ -175,10 +180,7 @@ pub type Init = R![
 ///         .context_path(uri!["first" / param: u32])
 ///         .map(|cx: R![param: _]| cx)
 ///         // GET /first/:param/echo
-///         .get(uri!["echo"], |cx: R![param: _, Body]| async move {
-///             let (param, body) = cx.into();
-///             format!("param: {}, body: {:?}", param, body)
-///         })
+///         .get(uri!["echo"], echo)
 ///         .collapse();
 ///
 ///     Server::bind(&([127, 0, 0, 1], 12345).into())
@@ -497,15 +499,15 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// ```
 ///
 /// # Error handling and flow control
-/// Errors that arise during request resolution are represented in the context as [coproducts] (a
-/// generalization of enums). When a fallible middleware is used ([try_map] or [try_then]), an
-/// additional error variant is added to the context's error coproduct. This also applies to parse
+/// Errors that may arise during request resolution are represented in the context as an exhaustive
+/// [coproduct] (a generalization of enums). When a fallible middleware is applied (in [try_map] or
+/// [try_then]), an additional variant is appended to said coproduct. This also applies to parse
 /// errors of dynamic path parameters (which are wrapped in a [tree::UriError]).
 ///
-/// If a fallible middleware returns `Err`, the request being processed short circuits and cannot
-/// be recovered. The specific error response returned to the client can however be modified by
-/// [map_errs] or [map_err]. The former transforms the complete error coproduct, while the latter
-/// maps over a single variant.
+/// If a fallible middleware returns `Err`, the request being processed short circuits, falling
+/// over to the error handling execution path. The specific error response returned to the client
+/// can be modified in a [map_errs] or [map_err] combinator; the former transforming the complete
+/// error coproduct and the latter a single variant of it.
 ///
 /// ```
 /// use hyperbole::{record_args, tree::UriError, uri, Ctx, R};
@@ -588,7 +590,7 @@ fn method_idx(m: &Method) -> Option<usize> {
 /// [map_err]: Ctx::map_err
 /// [map_errs]: Ctx::map_errs
 /// [path]: Ctx::path
-/// [coproducts]: frunk_core::coproduct
+/// [coproduct]: frunk_core::coproduct
 /// [Named fields]: field::Field
 pub struct Ctx<P, L, S = ()> {
     source: S,
