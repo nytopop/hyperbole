@@ -1,12 +1,14 @@
 //! Helpers for parsing request bodies.
 use super::{field::IsoDecode, r, reply::Reply, Response, R};
-use bytes::buf::BufExt;
+use bytes::{buf::BufExt, Buf, Bytes};
 use frunk_core::hlist::{HCons, HList};
+use futures::future::FutureExt;
 use headers::{ContentType, HeaderMapExt};
 use http::HeaderMap;
-use hyper::{body::aggregate, Body, StatusCode};
+use hyper::{body, Body, StatusCode};
 use mime::Mime;
 use serde::de::DeserializeOwned;
+use std::future::Future;
 use thiserror::Error;
 
 macro_rules! bad_request_display {
@@ -65,7 +67,7 @@ bad_request_display! { JsonBodyError }
 ///     .get(uri!["the-thing" / "via-mw"], the_thing);
 /// ```
 pub async fn json<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], JsonBodyError> {
-    let bodyr = aggregate(cx.head).await?.reader();
+    let bodyr = body::aggregate(cx.head).await?.reader();
 
     serde_json::from_reader(bodyr)
         .map_err(JsonBodyError::Json)
@@ -99,7 +101,7 @@ pub async fn json<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], JsonBodyEr
 ///     .get(uri!["the-thing" / z: f64], the_thing);
 /// ```
 pub async fn jsonr<T: IsoDecode>(cx: R![Body]) -> Result<T, JsonBodyError> {
-    let bodyr = aggregate(cx.head).await?.reader();
+    let bodyr = body::aggregate(cx.head).await?.reader();
 
     serde_json::from_reader(bodyr)
         .map_err(JsonBodyError::Json)
@@ -148,7 +150,7 @@ bad_request_display! { FormBodyError }
 ///     .get(uri!["the-thing" / "via-mw"], the_thing);
 /// ```
 pub async fn form<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], FormBodyError> {
-    let bodyr = aggregate(cx.head).await?.reader();
+    let bodyr = body::aggregate(cx.head).await?.reader();
 
     serde_urlencoded::from_reader(bodyr)
         .map_err(FormBodyError::Form)
@@ -182,7 +184,7 @@ pub async fn form<T: DeserializeOwned>(cx: R![Body]) -> Result<R![T], FormBodyEr
 ///     .get(uri!["the-thing" / z: f64], the_thing);
 /// ```
 pub async fn formr<T: IsoDecode>(cx: R![Body]) -> Result<T, FormBodyError> {
-    let bodyr = aggregate(cx.head).await?.reader();
+    let bodyr = body::aggregate(cx.head).await?.reader();
 
     serde_urlencoded::from_reader(bodyr)
         .map_err(FormBodyError::Form)
@@ -252,7 +254,7 @@ where T: DeserializeOwned {
         .ok_or(AutoBodyError::MissingContentType)?
         .into();
 
-    let bodyr = aggregate(head).await?.reader();
+    let bodyr = body::aggregate(head).await?.reader();
 
     match mime.subtype() {
         mime::JSON => serde_json::from_reader(bodyr)
@@ -303,7 +305,7 @@ where T: HList + IsoDecode {
         .ok_or(AutoBodyError::MissingContentType)?
         .into();
 
-    let bodyr = aggregate(head).await?.reader();
+    let bodyr = body::aggregate(head).await?.reader();
 
     match mime.subtype() {
         mime::JSON => serde_json::from_reader(bodyr)
@@ -317,3 +319,62 @@ where T: HList + IsoDecode {
         _ => Err(AutoBodyError::UnknownFormat(mime)),
     }
 }
+
+bad_request_display! { hyper::Error }
+
+/// Retrieve the request body as a contiguous [Bytes] buffer.
+///
+/// Use with [`Ctx::handle_with`][super::Ctx::handle_with] or [`Ctx::try_then`][super::Ctx::try_then].
+///
+/// # Examples
+/// ```
+/// use bytes::Bytes;
+/// use hyperbole::{body, record_args, uri, Ctx};
+///
+/// #[record_args]
+/// async fn the_thing(_body: Bytes) -> &'static str {
+///     "got em"
+/// }
+///
+/// let _ctx = Ctx::default()
+///     // inline with get_with:
+///     .get_with(uri!["the-thing"], body::bytes, the_thing)
+///     // or as a middleware:
+///     .try_then(body::bytes)
+///     .get(uri!["eht-thing"], the_thing);
+/// ```
+pub async fn bytes(cx: R![Body]) -> hyper::Result<R![Bytes]> {
+    body::to_bytes(cx.head).await.map(|b| r![b])
+}
+
+/// Retrieve the request body as a non-contiguous [Buffer].
+///
+/// Use with [`Ctx::handle_with`][super::Ctx::handle_with] or [`Ctx::try_then`][super::Ctx::try_then].
+///
+/// # Examples
+/// ```
+/// use hyperbole::{
+///     body::{self, Buffer},
+///     record_args, uri, Ctx,
+/// };
+///
+/// #[record_args]
+/// async fn the_thing(_body: Buffer) -> &'static str {
+///     "got em"
+/// }
+///
+/// let _ctx = Ctx::default()
+///     // inline with get_with:
+///     .get_with(uri!["the-thing"], body::aggregate, the_thing)
+///     // or as a middleware:
+///     .try_then(body::aggregate)
+///     .get(uri!["eht-thing"], the_thing);
+/// ```
+// TODO: this should be an async fn, but rustdoc can't handle that with a type_alias_impl_trait
+//       binding for some reason.
+pub fn aggregate(cx: R![Body]) -> impl Future<Output = hyper::Result<R![Buffer]>> {
+    body::aggregate(cx.head).map(|h| h.map(|b| r![b]))
+}
+
+/// The opaque [Buf] returned by [aggregate].
+pub type Buffer = impl Buf;
