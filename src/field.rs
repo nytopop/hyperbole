@@ -294,6 +294,23 @@ macro_rules! f {
 /// A named value where the name is lifted to the type level, analagous to a struct field.
 ///
 /// This struct is intended to be named and instantiated via the [f!] or [r!] / [R!] macros.
+///
+/// For convenience, `Field<T>` implements [Deref] and [DerefMut] for `T`, as well as a number of
+/// fundamental traits like [Clone], [Debug], etc. Consider it a smart pointer to a `T`.
+///
+/// # Examples
+/// ```
+/// use hyperbole::f;
+///
+/// let mut field = f![foo = "neat".to_owned()];
+///
+/// assert_eq!(4, field.len()); // Deref<Target = String>
+/// field.push('o'); // DerefMut
+/// assert_eq!("neato", format!("{}", field)); // Display
+/// assert_eq!(field, field.clone()); // Clone
+///
+/// assert_eq!("foo", field.name());
+/// ```
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Field<T, const NAME: &'static str> {
     inner: T,
@@ -314,6 +331,11 @@ impl<T, const NAME: &'static str> Field<T, NAME> {
 
     /// The field's name.
     pub const NAME: &'static str = NAME;
+
+    /// The field's name.
+    pub const fn name(&self) -> &'static str {
+        Self::NAME
+    }
 }
 
 impl<T, const NAME: &'static str> From<T> for Field<T, NAME> {
