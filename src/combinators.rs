@@ -57,32 +57,6 @@ impl<T, Head, Tail: CoprodAppend<T>> CoprodAppend<T> for Coproduct<Head, Tail> {
     }
 }
 
-/// A hack to make `type_alias_impl_trait` work with rustdoc.
-///
-/// When compiling under rustdoc, the left variant is used, while rustc will use the right
-/// variant.
-///
-/// Tracking issue for the bug: https://github.com/rust-lang/rust/issues/65863
-macro_rules! doc_hack {
-    ($doc:expr, $not_doc:expr) => {
-        #[cfg(doc)]
-        {
-            $doc
-        }
-        #[cfg(not(doc))]
-        {
-            $not_doc
-        }
-    };
-
-    ($doc:item $not_doc:item) => {
-        #[cfg(doc)]
-        $doc
-        #[cfg(not(doc))]
-        $not_doc
-    };
-}
-
 macro_rules! derive_clone_new_3 {
     ($t:ty where $( $p:ident $( : $bound:ident )? ),+) => {
         impl<$( $p $( : $bound )? ),+> Clone for $t {
@@ -159,19 +133,14 @@ where
 
     type Error = <L as Link<Req, P>>::Error;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
         let head = self.value.clone();
 
-        let fut = (self.prev)
+        self.prev
             .handle_link(req, p)
-            .map_ok(move |(tail, p)| (HCons { head, tail }, p));
-
-        doc_hack! { fut.boxed(), fut }
+            .map_ok(move |(tail, p)| (HCons { head, tail }, p))
     }
 }
 
@@ -200,19 +169,14 @@ where
 
     type Error = <L as Link<Req, P>>::Error;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
         let rest = self.value.clone();
 
-        let fut = (self.prev)
+        self.prev
             .handle_link(req, p)
-            .map_ok(move |(head, p)| (head + rest, p));
-
-        doc_hack! { fut.boxed(), fut }
+            .map_ok(move |(head, p)| (head + rest, p))
     }
 }
 
@@ -240,21 +204,16 @@ where
 
     type Error = <L as Link<Req, P>>::Error;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
         let next = self.next.clone();
 
-        let fut = self.prev.handle_link(req, p).map_ok(move |(stack, p)| {
+        self.prev.handle_link(req, p).map_ok(move |(stack, p)| {
             let (take, rest) = stack.sculpt();
             let merge = next(take);
             (rest + merge, p)
-        });
-
-        doc_hack! { fut.boxed(), fut }
+        })
     }
 }
 
@@ -283,22 +242,17 @@ where
 
     type Error = Coproduct<E, <L as Link<Req, P>>::Error>;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
         let next = self.next.clone();
 
-        let fut = self.prev.handle_link(req, p).map(move |res| {
+        self.prev.handle_link(req, p).map(move |res| {
             let (stack, p) = res.map_err(Coproduct::Inr)?;
             let (take, rest) = stack.sculpt();
             let merge = next(take).map_err(Coproduct::Inl)?;
             Ok((rest + merge, p))
-        });
-
-        doc_hack! { fut.boxed(), fut }
+        })
     }
 }
 
@@ -328,21 +282,16 @@ where
 
     type Error = <L as Link<Req, P>>::Error;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
         let next = self.next.clone();
 
-        let fut = (self.prev.handle_link(req, p)).and_then(|(stack, p)| async move {
+        (self.prev.handle_link(req, p)).and_then(|(stack, p)| async move {
             let (take, rest) = stack.sculpt();
             let merge = next(take).await;
             Ok((rest + merge, p))
-        });
-
-        doc_hack! { fut.boxed(), fut }
+        })
     }
 }
 
@@ -373,22 +322,17 @@ where
 
     type Error = Coproduct<E, <L as Link<Req, P>>::Error>;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
         let next = self.next.clone();
 
-        let fut = self.prev.handle_link(req, p).then(|res| async move {
+        self.prev.handle_link(req, p).then(|res| async move {
             let (stack, p) = res.map_err(Coproduct::Inr)?;
             let (take, rest) = stack.sculpt();
             let merge = next(take).await.map_err(Coproduct::Inl)?;
             Ok((rest + merge, p))
-        });
-
-        doc_hack! { fut.boxed(), fut }
+        })
     }
 }
 
@@ -412,17 +356,12 @@ where
 
     type Error = E;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
         let next = self.next.clone();
 
-        let fut = self.prev.handle_link(req, p).map_err(move |e| next(e));
-
-        doc_hack! { fut.boxed(), fut }
+        self.prev.handle_link(req, p).map_err(move |e| next(e))
     }
 }
 
@@ -449,20 +388,15 @@ where
 
     type Error = Coproduct<R, <<L as Link<Req, P>>::Error as CoprodUninjector<E, Ix>>::Remainder>;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
         let next = self.next.clone();
 
-        let fut = (self.prev.handle_link(req, p)).map_err(move |e| match e.uninject() {
+        (self.prev.handle_link(req, p)).map_err(move |e| match e.uninject() {
             Ok(err) => Coproduct::Inl(next(err)),
             Err(no) => Coproduct::Inr(no),
-        });
-
-        doc_hack! { fut.boxed(), fut }
+        })
     }
 }
 
@@ -508,13 +442,10 @@ where
     type Error =
         <<L as Link<Req, P>>::Error as CoprodAppend<<Sub as Parser<Segment>>::Error>>::Output;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
-        let fut = self.link.handle_link(req, p).map(|res| match res {
+        self.link.handle_link(req, p).map(|res| match res {
             Ok((stack, p)) => match p.pluck() {
                 (Ok(ps), rem) => Ok((stack + ps, rem)),
                 (Err(e), _) => Err(<<L as Link<Req, P>>::Error as CoprodAppend<
@@ -522,9 +453,7 @@ where
                 >>::appendr(e)),
             },
             Err(e) => Err(e.appendl()),
-        });
-
-        doc_hack! { fut.boxed(), fut }
+        })
     }
 }
 
@@ -552,20 +481,15 @@ where
 
     type Error = <L as Link<Req, P>>::Error;
 
-    doc_hack! {
-        type Future = BoxFuture<'static, Result<(Self::Output, Self::Params), Self::Error>>;
-        type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
-    }
+    type Future = impl Future<Output = Result<(Self::Output, Self::Params), Self::Error>>;
 
     fn handle_link(&self, req: Req, p: P) -> Self::Future {
         let next = Arc::clone(&self.next);
 
-        let fut = self.prev.handle_link(req, p).and_then(|(s, _)| async move {
+        self.prev.handle_link(req, p).and_then(|(s, _)| async move {
             let (take, _) = s.sculpt();
             let reply = next(take).await;
             Ok((reply.into_response(), HNil))
-        });
-
-        doc_hack! { fut.boxed(), fut }
+        })
     }
 }
