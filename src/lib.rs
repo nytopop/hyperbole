@@ -69,7 +69,7 @@ use combinators::{
     Add2, Base, End, Inject, InjectAll, Link, Map, MapErr, MapErrs, Path, Then, TryMap, TryThen,
 };
 use handler::{Chain, Handler, NotFound};
-use reply::Reply;
+use reply::{redirect, Reply};
 use tree::{Cluster, Node, Params, Parser, PathSpec, Route, Segment};
 
 use frunk_core::{
@@ -77,10 +77,8 @@ use frunk_core::{
     indices::Here,
 };
 use futures::future::{ready, BoxFuture, FutureExt, NeverError, Ready};
-use http::{Extensions, HeaderMap, HeaderValue, Uri, Version};
-use hyper::{
-    header::LOCATION, server::conn::AddrStream, service::Service, Body, Method, Request, StatusCode,
-};
+use http::{Extensions, HeaderMap, Uri, Version};
+use hyper::{server::conn::AddrStream, service::Service, Body, Method, Request};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -152,15 +150,7 @@ impl Service<Request<Body>> for AppService {
 }
 
 /// The set of request scoped state that contexts are initialized with.
-pub type Init = R![
-    Body,
-    Method,
-    Uri,
-    Version,
-    HeaderMap<HeaderValue>,
-    Extensions,
-    SocketAddr,
-];
+pub type Init = R![Body, Method, Uri, Version, HeaderMap, Extensions, SocketAddr];
 
 /// Contains routes and handlers for a given http application.
 ///
@@ -321,11 +311,12 @@ impl App {
         }
     }
 
-    fn lookup_route(&self, method: &Method, path: &str) -> Option<Route<'_, dyn Handler>> {
+    fn lookup_route(&self, method: &Method, path: &str) -> Route<'_, dyn Handler> {
         method_idx(method)
             .map(|i| &self.common[i])
             .or_else(|| self.custom.get(method))
             .map(|n| n.lookup(path))
+            .unwrap_or_default()
     }
 
     fn dispatch(&self, req: Request<Body>, addr: SocketAddr) -> BoxFuture<'static, Response> {
@@ -341,30 +332,21 @@ impl App {
             Cow::Owned(s)
         }
 
-        let method = req.method();
         let path = req.uri().path();
+        let route = self.lookup_route(req.method(), path);
 
-        match self.lookup_route(method, path) {
-            Some(Route { entry: Some(h), .. }) => h.handle(req, addr),
-
-            Some(Route { tsr: true, .. }) if method != Method::CONNECT && path != "/" => {
-                let code = if let Method::GET = *method {
-                    StatusCode::MOVED_PERMANENTLY
-                } else {
-                    StatusCode::PERMANENT_REDIRECT
-                };
-
-                let resp = hyper::Response::builder()
-                    .status(code)
-                    .header(LOCATION, &*swap_trailing_slash(path))
-                    .body(Body::empty())
-                    .unwrap();
-
-                Box::pin(async { resp })
-            }
-
-            _ => self.not_found.handle(req, addr),
+        // there's a handler matching this uri
+        if let Some(h) = route.entry {
+            return h.handle(req, addr);
         }
+
+        // there's a handler matching this uri if the trailing slash is swapped
+        if route.tsr && req.method() != Method::CONNECT && path != "/" {
+            return ready(redirect(false, swap_trailing_slash(path))).boxed();
+        }
+
+        // there's no handler matching this uri
+        self.not_found.handle(req, addr)
     }
 
     /// Create a test client for this app.

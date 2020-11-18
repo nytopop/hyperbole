@@ -3,7 +3,10 @@ use super::{field::IsoEncode, Response, R};
 use frunk_core::coproduct::{CNil, Coproduct};
 use headers::{Header, HeaderMapExt};
 use http::{HeaderMap, Method, StatusCode, Uri};
-use hyper::header::{CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS};
+use hyper::{
+    header::{CONTENT_TYPE, LOCATION, X_CONTENT_TYPE_OPTIONS},
+    Body,
+};
 use hyper_staticfile::{resolve_path, ResponseBuilder};
 use serde::Serialize;
 use std::{
@@ -166,6 +169,7 @@ pub fn json<T: Serialize>(value: &T) -> Response {
 
 /// Returns a json [Response] from an hlist of [Serialize] named fields.
 ///
+/// # Examples
 /// ```
 /// use hyperbole::{r, reply};
 ///
@@ -280,4 +284,26 @@ async fn fs_inner(path: PathBuf, m: Method, u: UriRes, h: HeaderMap) -> Result<R
         .request_parts(&m, &uri, &h)
         .build(resolve_path(path, uri.path()).await?)
         .map_err(|e| e.into())
+}
+
+/// Returns a redirect response to the provided `path`.
+///
+/// # Examples
+/// ```
+/// use hyperbole::{reply, uri, Ctx, R};
+///
+/// let _ctx = Ctx::default().get(uri!["go-home"], |cx: R![]| async {
+///     reply::redirect(true, "/home")
+/// });
+/// ```
+pub fn redirect<P: AsRef<str>>(permanent: bool, path: P) -> Response {
+    hyper::Response::builder()
+        .status(if permanent {
+            StatusCode::PERMANENT_REDIRECT
+        } else {
+            StatusCode::TEMPORARY_REDIRECT
+        })
+        .header(LOCATION, path.as_ref())
+        .body(Body::empty())
+        .unwrap()
 }
