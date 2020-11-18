@@ -12,7 +12,7 @@ use std::{
     str::FromStr,
 };
 
-/// Access a [named field][field::Field] in an hlist.
+/// Access a [named field][Field] in an hlist.
 ///
 /// # First form: evaluates to a statement that moves an hlist field into a variable
 /// Immutable: `zoom!(new_variable = my_record.field_name)`
@@ -88,8 +88,8 @@ macro_rules! zoom {
 
 /// Expands to the type of an hlist that may contain named fields.
 ///
-/// [Named fields][field::Field] are used to disambiguate elements of the same type, as most logic
-/// in this crate depends on types being unique within hlists.
+/// [Named fields][Field] are used to disambiguate elements of the same type, as most logic in this
+/// crate depends on types being unique within hlists.
 ///
 /// Any invocation may contain an arbitrary number of comma separated elements of the form `Type`
 /// or `name: Type`. Optionally, `...Type` may be added to the end in order to append the elements
@@ -161,8 +161,8 @@ macro_rules! R {
 
 /// Expands to an hlist that may contain named fields.
 ///
-/// [Named fields][field::Field] are used to disambiguate elements of the same type, as most logic
-/// in this crate depends on types being unique within hlists.
+/// [Named fields][Field] are used to disambiguate elements of the same type, as most logic in this
+/// crate depends on types being unique within hlists.
 ///
 /// Any invocation may contain an arbitrary number of comma separated elements of the form `expr`
 /// or `name = expr`. Optionally, `...expr` may be added to the end in order to append the elements
@@ -237,8 +237,8 @@ macro_rules! r {
     };
 }
 
-/// Expands to either the type of a [named field][field::Field], or a (~consty) expression that
-/// evaluates to an instantiated field.
+/// Expands to either the type of a [named field][Field], or a (~consty) expression that evaluates
+/// to an instantiated field.
 ///
 /// # First form: evaluates to the type of a named field with an inferred value type
 ///

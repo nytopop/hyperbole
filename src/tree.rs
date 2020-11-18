@@ -57,8 +57,8 @@ use thiserror::Error;
 /// uri!["one" / *everything_else: String];
 /// ```
 ///
-/// Within an [App], routes must be uniquely determinable. That is, for any request, exactly
-/// one or zero routes will match, *always*. Ambiguous routes are not permitted.
+/// Within an [App][super::App], routes must be uniquely determinable. That is, for any request,
+/// exactly one or zero routes will match, *always*. Ambiguous routes are not permitted.
 ///
 /// # Query parameters
 /// Query parameters may be added to the end of a [uri!], but do not affect routing. They are
@@ -81,7 +81,7 @@ use thiserror::Error;
 /// ```
 ///
 /// # Interaction with request scoped state
-/// Any parameters in a [uri!] invocation are exposed as [named fields][field::Field].
+/// Any parameters in a [uri!] invocation are exposed as [named fields][super::field::Field].
 ///
 /// After parsing completes, said fields will be merged with any other request scoped state.
 ///
